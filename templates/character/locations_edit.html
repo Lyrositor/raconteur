@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}{% if location.id %}Edit {{ location.name }}{% else %}Create Location{% endif %}{% endblock %}
+
+{% block content %}
+  {% for error in validation_errors %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+  {% endfor %}
+  <form method="post">
+    <div class="mb-3">
+      <label for="name" class="form-label">Name</label>
+      <input type="text" class="form-control" id="name" name="name" aria-describedby="name-help" maxlength="{{ location_name_max_length }}" value="{{ location.name if location.name }}">
+      <div id="name-help" class="form-text">The location's publicly visible name, which must be all lowercase and consist only of letters, numbers and dashes (max {{ location_name_max_length }} characters).</div>
+    </div>
+
+    <div class="mb-3">
+      <label for="category" class="form-label">Category</label>
+      <input type="text" class="form-control" id="category" name="category" aria-describedby="category-help" maxlength="{{ location_category_max_length }}" value="{{ location.category if location.category }}">
+      <div id="category-help" class="form-text">
+        The name of the Discord category in which this location's mapped channel will be created (max {{ location_category_max_length }} characters).
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label for="description" class="form-label">Description</label>
+      <textarea class="form-control" id="description" name="description" aria-describedby="description-help" rows="6">{{ location.description if location.description }}</textarea>
+      <div id="description-help" class="form-text">
+        The location's description, to be kept updated over time (max {{ location_description_max_length }} characters). Can be templated.
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <button type="submit" name="action" value="edit_location" class="btn btn-primary" id="submit">{% if location.id %}Edit{% else %}Create{% endif %}</button>
+      <a class="btn btn-secondary" href="{{ url_for('characters_locations', current_game_id=current_game.guild_id) }}">Cancel</a>
+    </div>
+  </form>
+
+  {% if location.id %}
+    <h3>Connections</h3>
+    <table class="table">
+      <thead>
+        <tr>
+          <th scope="col">Location</th>
+          <th scope="col">Timer (in seconds)</th>
+          <th scope="col">Locked?</th>
+          <th scope="col">Hidden?</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for connection in location.connections_1 + location.connections_2 %}
+          <tr>
+            <th>
+              {% for category, category_locations in other_locations.items() %}
+                {% for category_location in category_locations %}
+                  {% if category_location.id in (connection.location_1_id, connection.location_2_id) %}{{ category_location.name }}{% endif %}
+                {% endfor %}
+              {% endfor %}
+            </th>
+            <td>
+              <label for="connection-timer-{{ connection.id }}" class="visually-hidden">Timer</label>
+              <input type="number" name="timer" min="0" class="form-control" id="connection-timer-{{ connection.id }}" form="connection-{{ connection.id }}" value="{{ connection.timer }}" />
+              <input type="hidden" name="connection_id" id="connection-id-{{ connection.id }}" value="{{ connection.id }}" form="connection-{{ connection.id }}">
+            </td>
+            <td>
+              <label for="connection-locked-{{ connection.id }}" class="visually-hidden">Locked?</label>
+              <input type="checkbox" name="locked" class="form-check-input" id="connection-locked-{{ connection.id }}" form="connection-{{ connection.id }}"{% if connection.locked %} checked{% endif %} />
+            </td>
+            <td>
+              <label for="connection-hidden-{{ connection.id }}" class="visually-hidden">Hidden?</label>
+              <input type="checkbox" name="hidden" class="form-check-input" id="connection-hidden-{{ connection.id }}" form="connection-{{ connection.id }}"{% if connection.hidden %} checked{% endif %} />
+            </td>
+            <td>
+              <form method="post" id="connection-{{ connection.id }}">
+                <button type="submit" name="action" value="edit_connection" class="btn btn-primary">Edit</button>
+                <button type="submit" name="action" value="delete_connection" class="btn btn-danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        <tr>
+          <td>
+            <label for="connection-location-new" class="visually-hidden">Location</label>
+            <select name="other_location_id" class="form-select" id="connection-location-new" form="connection-new">
+              <option value="" {% if not connection_new_other_location_id %} selected{% endif %}>Choose Location</option>
+              {% for category, category_locations in other_locations.items() %}
+                <optgroup label="{{ category }}">
+                  {% for category_location in category_locations %}
+                    <option value="{{ category_location.id }}"{% if category_location.id == connection_new_other_location_id %} selected{% endif %}>{{ category_location.name }}</option>
+                  {% endfor %}
+                </optgroup>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <label for="connection-timer-new" class="visually-hidden">Timer</label>
+            <input type="number" name="timer" min="0" class="form-control" id="connection-timer-new" form="connection-new" value="{{ connection_new_timer if connection_new_timer }}" />
+          </td>
+          <td>
+            <label for="connection-locked-new" class="visually-hidden">Locked?</label>
+            <input type="checkbox" name="locked" class="form-check-input" id="connection-locked-new" form="connection-new"{% if connection_new_locked %} checked{% endif %} />
+          </td>
+          <td>
+            <label for="connection-hidden-new" class="visually-hidden">Hidden?</label>
+            <input type="checkbox" name="hidden" class="form-check-input" id="connection-hidden-new" form="connection-new"{% if connection_new_hidden %} checked{% endif %} />
+          </td>
+          <td>
+            <form method="post" id="connection-new">
+              <button type="submit" name="action" value="add_connection" class="btn btn-success">Add</button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

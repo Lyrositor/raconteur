@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "raconteur"
+version = "1.0.0"
+description = ""
+authors = ["Lyrositor <gagne.marc@gmail.com>"]
+license = "CC0-1.0"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+"discord.py" = "^1.7.1"
+pydantic = {extras = ["dotenv"], version = "^1.8.1"}
+SQLAlchemy = "^1.4.13"
+sqlalchemy-json = "^0.4.0"
+fastapi = "^0.64.0"
+uvicorn = "^0.13.4"
+aiofiles = "^0.6.0"
+Jinja2 = "^2.11.3"
+Authlib = "^0.15.3"
+loginpass = "^0.5"
+httpx = "^0.18.1"
+itsdangerous = "^1.1.0"
+aiocached = "^0.3"
+python-multipart = "^0.0.5"
+
+[tool.poetry.dev-dependencies]
+mypy = "^0.812"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

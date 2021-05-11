@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}{% if character.id %}Edit {{ character.name }}{% else %}Create Character{% endif %}{% endblock %}
+
+{% block content %}
+  {% for error in validation_errors %}
+    <div class="alert alert-danger" role="alert">{{ error }}</div>
+  {% endfor %}
+  <form method="post">
+    <div class="mb-3">
+      <label for="name" class="form-label">Name</label>
+      <input type="text" class="form-control" id="name" name="name" aria-describedby="name-help" maxlength="{{ character_name_max_length }}" value="{{ character.name if character.name }}">
+      <div id="name-help" class="form-text">Your character's publicly visible name (max {{ character_name_max_length }} characters).</div>
+    </div>
+
+    <div class="mb-3">
+      <label for="status" class="form-label">Status</label>
+      <input type="text" class="form-control" id="status" name="status" aria-describedby="status-help" maxlength="{{ character_status_max_length }}" value="{{ character.status if character.status }}">
+      <div id="status-help" class="form-text">
+        A brief description of your character's current status, to be kept updated throughout the game. This will be used to let other players know at a glance what is going on with your character (optional, max {{ character_status_max_length }} characters).
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label for="appearance" class="form-label">Appearance</label>
+      <textarea class="form-control" id="appearance" name="appearance" aria-describedby="appearance-help">{{ character.appearance if character.appearance }}</textarea>
+      <div id="appearance-help" class="form-text">
+        Your character's physical appearance (optional, max {{ character_appearance_max_length }} characters).
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label for="portrait" class="form-label">Portrait</label>
+      <input type="text" class="form-control" id="portrait" name="portrait" aria-describedby="portrait-help" value="{{ character.portrait if character.portrait }}">
+      <div id="portrait-help" class="form-text">
+        A URL to an image file with your character's portrait (optional).
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <button type="submit" class="btn btn-primary">{% if character.id %}Edit{% else %}Create{% endif %}</button>
+      <a class="btn btn-secondary" href="{{ url_for('characters_yours', current_game_id=current_game.guild_id) }}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

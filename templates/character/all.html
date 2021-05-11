@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}All Characters{% endblock %}
+
+{% block content %}
+  <div class="row row-cols-1 row-cols-md-3">
+    {% for character in characters %}
+      <div class="col p-3">
+        <div class="card" style="width: 18rem;">
+          <div style="background-color: #eeeeee; height: 18rem; overflow: hidden;">
+            {% if character.portrait %}
+              <img src="{{ character.portrait }}" alt="{{ character.name }} Portrait" class="card-img-top">
+            {% endif %}
+          </div>
+          <div class="card-body">
+            <h5 class="card-title">{{ character.name }}</h5>
+            {% if character.status %}<p class="card-text">{{ character.status}}</p>{% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}
