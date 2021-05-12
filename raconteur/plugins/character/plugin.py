@@ -1,9 +1,10 @@
 import asyncio
+import random
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Union
 
 from discord import Member, CategoryChannel, PermissionOverwrite, Guild, Message, TextChannel
-from discord.abc import Messageable
 from fastapi import APIRouter
 from sqlalchemy.orm import Session
 
@@ -207,6 +208,36 @@ class CharacterPlugin(Plugin):
             await self.move_character(ctx.guild, character, new_location)
             session.commit()
             return f"Force moved {character.name} to `{location}`"
+
+    @command(help_msg="Rolls a d100.")
+    async def d100(self, ctx: CommandCallContext):
+        return await self.roll(ctx, "1d100")
+
+    @command(help_msg="Rolls a d10.")
+    async def d10(self, ctx: CommandCallContext):
+        return await self.roll(ctx, "1d10")
+
+    @command(help_msg="Rolls a set of standard polyhedral dice (d4, d6, d8, d10, d12, d20, d100). Example: 1d6 3d8")
+    async def roll(self, ctx: CommandCallContext, dice: str):
+        elements = re.split(r"\s+", dice.strip())
+        rolls = []
+        for element in elements:
+            if not (match := re.match(r"^(\d+)d(\d+)$", element)):
+                raise CommandException("Invalid roll request")
+            num_dice, num_sides = int(match.group(1)), int(match.group(2))
+            for _ in range(num_dice):
+                rolls.append((random.randint(1, num_sides), num_sides))
+        total = sum(roll for roll, num_sides in rolls)
+        roll_message = f"rolled **{total}** = " + " + ".join(f"{roll} [d{num_sides}]" for roll, num_sides in rolls)
+        with get_session() as session:
+            if location := Location.get_for_channel(session, ctx.guild.id, ctx.channel.id):
+                await send_broadcast(ctx.guild, location, f"**The GM** " + roll_message)
+                return None
+            elif character := Character.get_for_channel(session, ctx.channel.id, ctx.member.id):
+                await send_broadcast(ctx.guild, location, f"**{character.name}** " + roll_message)
+                return None
+            else:
+                return f"**{ctx.message.author.display_name}**" + roll_message
 
     @staticmethod
     async def move_character(guild: Guild, character: Character, new_location: Location):
