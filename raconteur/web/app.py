@@ -8,24 +8,24 @@ from raconteur.models.base import get_session
 from raconteur.plugins import PLUGINS
 from raconteur.web.auth import get_auth_router
 from raconteur.web.context import RequestContext
-from raconteur.web.templates import render_response
+from raconteur.web.templates import render_response, TemplateResponse
 
 base_router = APIRouter()
 
 
 @base_router.get("/")
-async def home(request: Request):
+async def home(request: Request) -> TemplateResponse:
     with get_session() as session:
         return render_response("home.html", await RequestContext.build(session, request, None))
 
 
 @base_router.get("/{current_game_id}")
-async def home_with_game(request: Request, current_game_id: int):
+async def home_with_game(request: Request, current_game_id: int) -> TemplateResponse:
     with get_session() as session:
         return render_response("home.html", await RequestContext.build(session, request, current_game_id))
 
 
-def setup_app():
+def setup_app() -> FastAPI:
     _app = FastAPI(
         title="Raconteur", openapi_url=None, docs_url=None, redoc_url=None, swagger_ui_oauth2_redirect_url=None
     )

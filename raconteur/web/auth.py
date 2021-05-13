@@ -2,12 +2,13 @@ from typing import Any, Optional
 
 from aiocached import cached
 from authlib.integrations.starlette_client import OAuth, StarletteRemoteApp
+from fastapi import APIRouter
 from loginpass import Discord
 from loginpass.discord import normalize_userinfo
 from pydantic import BaseModel
 from starlette.config import Config as StarletteConfig
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from raconteur.config import config
 from raconteur.models.game import Game
@@ -48,14 +49,14 @@ async def get_permissions(
     return permissions
 
 
-async def async_normalize_info(client, data):
+async def async_normalize_info(client: Any, data: Any) -> dict[str, Any]:
     # Fix for async apps: authlib expects an async function, but the Discord integration doesn't provide that
     return normalize_userinfo(client, data)
 
 
 async def handle_authorize(
         remote: StarletteRemoteApp, token: Optional[str], user_info: Optional[dict[str, Any]], request: Request
-):
+) -> Response:
     request.session["user"] = None
     if user_info:
         user = AuthenticatedUser(id=int(user_info["sub"]), username=user_info["name"], email=user_info["email"])
@@ -68,7 +69,7 @@ async def logout(request: Request) -> RedirectResponse:
     return RedirectResponse(request.url_for("home"))
 
 
-def get_auth_router():
+def get_auth_router() -> APIRouter:
     oauth_config = StarletteConfig(
         environ={"DISCORD_CLIENT_ID": config.bot_client_id, "DISCORD_CLIENT_SECRET": config.bot_client_secret}
     )
@@ -80,7 +81,7 @@ def get_auth_router():
 
 
 @cached(ttl=60)
-async def _get_member_roles(guild_id: int, user_id) -> list[int]:
+async def _get_member_roles(guild_id: int, user_id: int) -> list[int]:
     client = await get_client()
     user = await client.http.get_member(guild_id, user_id)
     return [int(role_id) for role_id in user["roles"]]

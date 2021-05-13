@@ -9,7 +9,7 @@ from discord import Message, Member, TextChannel
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import Column, ForeignKey
-from sqlalchemy.orm import declared_attr, declarative_mixin, relationship
+from sqlalchemy.orm import declared_attr, declarative_mixin, relationship, RelationshipProperty
 
 from raconteur.commands import Command, parse_message_as_command_call, COMMAND_PREFIX
 from raconteur.exceptions import CommandException
@@ -29,17 +29,17 @@ class PluginModelMixin:
 
     # noinspection PyMethodParameters
     @declared_attr
-    def __tablename__(cls):
-        return f"{cls.__plugin__}__{cls.__plugin_table_name__}"
+    def __tablename__(cls) -> str:
+        return f"{cls.__plugin__}__{cls.__plugin_table_name__}"  # type: ignore
 
     # noinspection PyMethodParameters
     @declared_attr
-    def game_guild_id(cls):
+    def game_guild_id(cls) -> Column:
         return Column("game_guild_id", ForeignKey(Game.guild_id), nullable=False)
 
     # noinspection PyMethodParameters
     @declared_attr
-    def guild(cls):
+    def guild(cls) -> RelationshipProperty:
         return relationship(Game)
 
 
@@ -94,7 +94,7 @@ class Plugin:
             if inspect.isasyncgenfunction(item) or inspect.iscoroutinefunction(item):
                 if hasattr(item, "command_metadata"):
                     cmd: Command = item.command_metadata
-                    cmd.callback = partial(cmd.callback, self)
+                    cmd.callback = partial(cmd.callback, self)  # type: ignore
                     commands[cmd.name] = cmd
         return commands
 

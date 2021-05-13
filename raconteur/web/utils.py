@@ -25,7 +25,7 @@ async def check_permissions(
     return True
 
 
-def add_validation_errors(context: RequestContext, validation_errors) -> None:
+def add_validation_errors(context: RequestContext, validation_errors: list[str]) -> None:
     if VALIDATION_ERRORS not in context.extra:
         context.extra[VALIDATION_ERRORS] = []
     context.extra[VALIDATION_ERRORS].extend(validation_errors)

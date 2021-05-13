@@ -19,7 +19,7 @@
           <td>
             <form method="post" action="{{ url_for('characters_locations_delete', current_game_id=current_game.guild_id, location_id=location.id) }}">
               <div class="btn-group me-2" role="group" aria-label="Actions">
-                <a class="btn btn-outline-secondary" href="{{ url_for('characters_locations_edit', current_game_id=current_game.guild_id, location_id=location.id) }}"><i class="bi bi-pencil"></i></a>
+                <a class="btn btn-outline-secondary" href="{{ url_for('characters_locations_edit_get', current_game_id=current_game.guild_id, location_id=location.id) }}"><i class="bi bi-pencil"></i></a>
                 <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-trash"></i></button>
               </div>
             </form>
@@ -28,7 +28,7 @@
       {% endfor %}
     </tbody>
   </table>
-  <a class="btn btn-primary" href="{{ url_for('characters_locations_new', current_game_id=current_game.guild_id) }}">
+  <a class="btn btn-primary" href="{{ url_for('characters_locations_new_get', current_game_id=current_game.guild_id) }}">
     Create Location
   </a>
 {% endblock %}

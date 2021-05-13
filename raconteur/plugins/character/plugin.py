@@ -2,7 +2,7 @@ import asyncio
 import random
 import re
 from datetime import datetime, timedelta
-from typing import Optional, Union
+from typing import Optional, Union, AsyncIterable
 
 from discord import Member, CategoryChannel, PermissionOverwrite, Guild, Message, TextChannel
 from fastapi import APIRouter
@@ -64,7 +64,7 @@ class CharacterPlugin(Plugin):
         help_msg="Synchronizes the locations in the database with the channels on the server.",
         requires_gm=True,
     )
-    async def location_sync(self, ctx: CommandCallContext):
+    async def location_sync(self, ctx: CommandCallContext) -> AsyncIterable[str]:
         yield "Syncing character channels with database"
 
         with get_session() as session:
@@ -107,7 +107,7 @@ class CharacterPlugin(Plugin):
         help_msg="Sets the Discord channel bound to a specific character.",
         requires_gm=True,
     )
-    async def char_channel_set(self, ctx: CommandCallContext, player: Member, name: Optional[str] = None):
+    async def char_channel_set(self, ctx: CommandCallContext, player: Member, name: Optional[str] = None) -> str:
         with get_session() as session:
             character = _get_character_implicit(session, player, name)
             if character.channel_id == ctx.channel.id:
@@ -120,7 +120,7 @@ class CharacterPlugin(Plugin):
         help_msg="Unsets the Discord channel bound to a specific character.",
         requires_gm=True,
     )
-    async def char_channel_unset(self, player: Member, name: Optional[str] = None):
+    async def char_channel_unset(self, player: Member, name: Optional[str] = None) -> str:
         with get_session() as session:
             character = _get_character_implicit(session, player, name)
             if character.channel_id is None:
@@ -134,7 +134,7 @@ class CharacterPlugin(Plugin):
                  f"status message to that value (maximum {CHARACTER_STATUS_MAX_LENGTH} characters).",
         requires_player=True,
     )
-    async def status(self, ctx: CommandCallContext, status: Optional[str] = None):
+    async def status(self, ctx: CommandCallContext, status: Optional[str] = None) -> Optional[str]:
         with get_session() as session:
             character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
             if not character:
@@ -147,12 +147,13 @@ class CharacterPlugin(Plugin):
                     raise CommandException(f"Status is too long (maximum {CHARACTER_STATUS_MAX_LENGTH} characters)")
                 character.status = status
                 session.commit()
+            return None
 
     @command(
         help_msg="Moves your character to another location.",
         requires_player=True,
     )
-    async def move(self, ctx: CommandCallContext, location: str):
+    async def move(self, ctx: CommandCallContext, location: str) -> Optional[str]:
         location = location.strip()
         with get_session() as session:
             character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
@@ -190,12 +191,15 @@ class CharacterPlugin(Plugin):
 
             await self.move_character(ctx.guild, character, new_location)
             session.commit()
+            return None
 
     @command(
         help_msg="Moves a player's character to another character, even if there are no connections to it.",
         requires_gm=True,
     )
-    async def move_force(self, ctx: CommandCallContext, location: str, player: Member, name: Optional[str] = None):
+    async def move_force(
+            self, ctx: CommandCallContext, location: str, player: Member, name: Optional[str] = None
+    ) -> str:
         location = location.strip()
         with get_session() as session:
             character = _get_character_implicit(session, player, name)
@@ -210,15 +214,15 @@ class CharacterPlugin(Plugin):
             return f"Force moved {character.name} to `{location}`"
 
     @command(help_msg="Rolls a d100.")
-    async def d100(self, ctx: CommandCallContext):
+    async def d100(self, ctx: CommandCallContext) -> Optional[str]:
         return await self.roll(ctx, "1d100")
 
     @command(help_msg="Rolls a d10.")
-    async def d10(self, ctx: CommandCallContext):
+    async def d10(self, ctx: CommandCallContext) -> Optional[str]:
         return await self.roll(ctx, "1d10")
 
     @command(help_msg="Rolls a set of standard polyhedral dice (d4, d6, d8, d10, d12, d20, d100). Example: 1d6 3d8")
-    async def roll(self, ctx: CommandCallContext, dice: str):
+    async def roll(self, ctx: CommandCallContext, dice: str) -> Optional[str]:
         elements = re.split(r"\s+", dice.strip())
         rolls = []
         for element in elements:
@@ -233,14 +237,17 @@ class CharacterPlugin(Plugin):
             if location := Location.get_for_channel(session, ctx.guild.id, ctx.channel.id):
                 await send_broadcast(ctx.guild, location, f"**The GM** " + roll_message)
                 return None
-            elif character := Character.get_for_channel(session, ctx.channel.id, ctx.member.id):
-                await send_broadcast(ctx.guild, location, f"**{character.name}** " + roll_message)
+            elif (
+                    (character := Character.get_for_channel(session, ctx.channel.id, ctx.member.id))
+                    and character.location
+            ):
+                await send_broadcast(ctx.guild, character.location, f"**{character.name}** " + roll_message)
                 return None
             else:
                 return f"**{ctx.message.author.display_name}**" + roll_message
 
     @staticmethod
-    async def move_character(guild: Guild, character: Character, new_location: Location):
+    async def move_character(guild: Guild, character: Character, new_location: Location) -> None:
         character.last_movement = datetime.utcnow()
         if character.location:
             await send_broadcast(

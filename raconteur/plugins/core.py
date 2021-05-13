@@ -1,4 +1,5 @@
 import asyncio
+from typing import AsyncIterable
 
 from discord import Colour, Role
 
@@ -11,7 +12,7 @@ from raconteur.plugin import Plugin, has_permission_for_command
 
 class CorePlugin(Plugin):
     @command(help_msg="Displays a list of commands you can run.")
-    async def help(self, ctx: CommandCallContext):
+    async def help(self, ctx: CommandCallContext) -> str:
         valid_commands = []
         for plugin in self.bot.get_enabled_plugins(ctx.guild):
             for plugin_command in plugin.commands.values():
@@ -20,7 +21,7 @@ class CorePlugin(Plugin):
         return "\n".join(valid_commands)
 
     @command(help_msg="Sets up the server for a first run.")
-    async def init(self, ctx: CommandCallContext):
+    async def init(self, ctx: CommandCallContext) -> AsyncIterable[str]:
         yield "Initializing game session"
         # TODO Don't allow re-initialization
 
@@ -53,7 +54,7 @@ class CorePlugin(Plugin):
         yield "Initialization complete"
 
     @command(help_msg="Enables a plugin for this server.")
-    async def plugin_enable(self, ctx: CommandCallContext, name: str):
+    async def plugin_enable(self, ctx: CommandCallContext, name: str) -> str:
         for plugin in self.bot.plugins:
             if plugin.__class__.__name__ == name:
                 with get_session() as session:
@@ -68,7 +69,7 @@ class CorePlugin(Plugin):
         raise CommandException(f'Unknown plugin "{name}"')
 
     @command(help_msg="Disables a plugin for this server.")
-    async def plugin_disable(self, ctx: CommandCallContext, name: str):
+    async def plugin_disable(self, ctx: CommandCallContext, name: str) -> str:
         if name == self.__class__.__name__:
             return f"Cannot disable **{self.__class__.__name__}**"
         for plugin in self.bot.plugins:

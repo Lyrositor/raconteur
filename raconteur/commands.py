@@ -141,7 +141,7 @@ class Command:
         if not inspect.isasyncgenfunction(callback) and not inspect.iscoroutinefunction(callback):
             raise TypeError("Command callback must be a coroutine.")
 
-        self.callback = callback
+        self.callback = callback  # type: ignore
         self.callback_args = callback_args
         self.name = name
         self.help_msg = help_msg
@@ -151,10 +151,10 @@ class Command:
         self.use_context = use_context
         self.params = params
 
-    def __call__(self, *args, **kwargs) -> Union[AsyncIterable, Coroutine]:
+    def __call__(self, *args: Any, **kwargs: Any) -> Union[AsyncIterable, Coroutine]:
         return self.callback(*args, **kwargs)
 
-    def __str__(self):
+    def __str__(self) -> str:
         params = [
             f" {'*' if not param.required else ''}{param.name}{'*' if not param.required else ''}"
             f"{'...' if param.collect else ''}"
@@ -207,11 +207,11 @@ class CommandCall:
                         args.append(param_value)
         invoked_command = self.command(*args)
         if inspect.iscoroutine(invoked_command):
-            response = self.process_result(await invoked_command)
+            response = self.process_result(await invoked_command)  # type: ignore
             if response:
                 yield response
         elif inspect.isasyncgen(invoked_command):
-            async for result in invoked_command:
+            async for result in invoked_command:  # type: ignore
                 response = self.process_result(result)
                 if response:
                     yield response
@@ -219,7 +219,7 @@ class CommandCall:
             raise TypeError(f'Invalid command result type "{invoked_command.__class__.__name__}"')
 
     @staticmethod
-    def process_result(result: Optional[Union[str, CommandCallResponse]]) -> Optional[Union[CommandCallResponse, str]]:
+    def process_result(result: Optional[Union[str, CommandCallResponse]]) -> Optional[CommandCallResponse]:
         if result is None:
             return None
         elif isinstance(result, str):
@@ -264,7 +264,7 @@ class CommandCall:
 def command(
         help_msg: str, hidden: bool = False, requires_gm: bool = False, requires_player: bool = False
 ) -> Callable:
-    def wrapper(func: Callable):
+    def wrapper(func: Callable) -> Callable:
         cmd_params = []
         signature = inspect.signature(func)
         use_context = False
@@ -280,6 +280,7 @@ def command(
                 use_context = True
                 continue
 
+            param_type: Type
             if parameter.annotation == parameter.empty:
                 raise ValueError(f'Missing annotation on parameter "{parameter.name}" for command "{func.__name__}"')
             elif parameter.annotation in (str, Optional[str]):
@@ -299,13 +300,13 @@ def command(
             cmd_params.append(
                 CommandParam(
                     name=parameter.name,
-                    type=param_type,
+                    type=param_type,  # type: ignore
                     required=parameter.default == parameter.empty,
                     collect=parameter.kind == parameter.VAR_POSITIONAL
                 )
             )
 
-        func.command_metadata = Command(
+        func.command_metadata = Command(  # type: ignore
             callback=func,
             callback_args=tuple(callback_args),
             name=func.__name__.replace("_", ""),

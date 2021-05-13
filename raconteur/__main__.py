@@ -40,7 +40,7 @@ def run_bot() -> None:
     bot.run(config.bot_token)
 
 
-def run_website():
+def run_website() -> None:
     import uvicorn
 
     # Ensure the database's tables are fully set up

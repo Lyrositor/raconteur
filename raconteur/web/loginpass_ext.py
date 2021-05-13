@@ -1,8 +1,16 @@
 # Taken from: https://github.com/authlib/loginpass/blob/master/loginpass/_fastapi.py
 # The latest published version of loginpass as of this writing (0.5) does not have FastAPI support yet
+from collections import Callable
+from typing import Any, Type
+
+from authlib.integrations.starlette_client import OAuth
+from fastapi import APIRouter, HTTPException
+from loginpass import Discord
+from starlette.requests import Request
+from starlette.responses import Response
 
 
-def create_fastapi_routes(backends, oauth, handle_authorize):
+def create_fastapi_routes(backends: list[Any], oauth: OAuth, handle_authorize: Callable) -> APIRouter:
     """Create a Fastapi routes that you can register it directly to fastapi
     app. The routes contains two route: ``/auth/<backend>`` and
     ``/login/<backend>``::
@@ -35,9 +43,6 @@ def create_fastapi_routes(backends, oauth, handle_authorize):
     :param handle_authorize: A function to handle authorized response
     :return: Fastapi APIRouter instance
     """
-    from fastapi import Request, APIRouter
-    from fastapi.exceptions import HTTPException
-
     router = APIRouter()
 
     for b in backends:
@@ -50,7 +55,7 @@ def create_fastapi_routes(backends, oauth, handle_authorize):
         code: str = None,
         oauth_verifier: str = None,
         request: Request = None,
-    ):
+    ) -> Response:
         remote = oauth.create_client(backend)
         if remote is None:
             raise HTTPException(404)
@@ -75,7 +80,7 @@ def create_fastapi_routes(backends, oauth, handle_authorize):
         return await handle_authorize(remote, token, user_info, request)
 
     @router.get("/login/{backend}")
-    async def login(backend: str, request: Request):
+    async def login(backend: str, request: Request) -> Response:
         remote = oauth.create_client(backend)
         if remote is None:
             raise HTTPException(404)
@@ -88,10 +93,10 @@ def create_fastapi_routes(backends, oauth, handle_authorize):
     return router
 
 
-def register_to(oauth, backend_cls):
+def register_to(oauth: OAuth, backend_cls: Type[Discord]) -> None:
     from authlib.integrations.starlette_client import StarletteRemoteApp
 
-    class RemoteApp(backend_cls, StarletteRemoteApp):
+    class RemoteApp(backend_cls, StarletteRemoteApp):  # type: ignore
         OAUTH_APP_CONFIG = backend_cls.OAUTH_CONFIG
 
     oauth.register(RemoteApp.NAME, overwrite=True, client_cls=RemoteApp)

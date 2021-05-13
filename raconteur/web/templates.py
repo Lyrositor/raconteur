@@ -1,17 +1,19 @@
-from typing import Any
+from typing import Any, Union
 
 # noinspection PyProtectedMember
 from starlette.templating import Jinja2Templates, _TemplateResponse
 
 from raconteur.web.context import RequestContext
 
+TemplateResponse = _TemplateResponse
+
 templates = Jinja2Templates(directory="templates")
 
 
-def render_response(name: str, context: RequestContext, **kwargs: Any) -> _TemplateResponse:
+def render_response(name: str, context: RequestContext, **kwargs: Any) -> TemplateResponse:
     # Build the menu based on which plugins are active for this game
     from raconteur.plugins import PLUGINS
-    menu = {}
+    menu: dict[str, Union[str, dict[str, str]]] = {}
     if context.current_game:
         for plugin in PLUGINS:
             for label, route_or_sub_menu in plugin.get_web_menu_for_game(context.current_game).items():
@@ -19,7 +21,7 @@ def render_response(name: str, context: RequestContext, **kwargs: Any) -> _Templ
                     if label not in menu:
                         menu[label] = {}
                     for sub_label, sub_route in route_or_sub_menu.items():
-                        menu[label][sub_label] = context.request.url_for(
+                        menu[label][sub_label] = context.request.url_for(  # type: ignore
                             sub_route, current_game_id=context.current_game.guild_id
                         )
                 elif isinstance(route_or_sub_menu, str):
@@ -38,7 +40,7 @@ def render_response(name: str, context: RequestContext, **kwargs: Any) -> _Templ
 def _prepare_menu(menu: dict[str, Any], id_prefix: str = "") -> list[dict[str, Any]]:
     sorted_menu = []
     for i, (label, route_or_sub_menu) in enumerate(sorted(menu.items())):
-        entry = {"id": f"{id_prefix}{i}", "label": label, "route": None, "children": []}
+        entry: dict[str, Any] = {"id": f"{id_prefix}{i}", "label": label, "route": None, "children": []}
         if isinstance(route_or_sub_menu, dict):
             entry["children"] = _prepare_menu(route_or_sub_menu, f"{i}-")
         else:

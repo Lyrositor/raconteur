@@ -6,7 +6,7 @@ from typing import Optional, Any, Callable
 from fastapi import APIRouter, Form
 from sqlalchemy.orm import Session
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from raconteur.models.base import get_session
 from raconteur.plugins.character.models import Character, CHARACTER_NAME_MAX_LENGTH, CHARACTER_STATUS_MAX_LENGTH, \
@@ -22,7 +22,7 @@ character_plugin_router = APIRouter()
 
 
 @character_plugin_router.get("/{current_game_id}/character/all")
-async def characters_all(request: Request, current_game_id: int):
+async def characters_all(request: Request, current_game_id: int) -> Response:
     with get_session() as session:
         context = await RequestContext.build(session, request, current_game_id)
         context.extra["characters"] = Character.get_all_of_guild(session, current_game_id)
@@ -30,16 +30,17 @@ async def characters_all(request: Request, current_game_id: int):
 
 
 @character_plugin_router.get("/{current_game_id}/character/yours")
-async def characters_yours(request: Request, current_game_id: int):
+async def characters_yours(request: Request, current_game_id: int) -> Response:
     with get_session() as session:
         context = await RequestContext.build(session, request, current_game_id)
+        assert context.current_user
         if await check_permissions(context, require_player=True):
             context.extra["characters"] = Character.get_all_of_member(session, current_game_id, context.current_user.id)
         return render_response("character/yours.html", context)
 
 
 @character_plugin_router.get("/{current_game_id}/character/yours/new")
-async def characters_yours_new(request: Request, current_game_id: int):
+async def characters_yours_new_get(request: Request, current_game_id: int) -> Response:
     return await _edit_entity(
         template="character/yours_edit.html",
         request=request,
@@ -51,14 +52,14 @@ async def characters_yours_new(request: Request, current_game_id: int):
 
 
 @character_plugin_router.post("/{current_game_id}/character/yours/new")
-async def characters_yours_new(
+async def characters_yours_new_post(
         request: Request,
         current_game_id: int,
         name: str = Form(""),
         status: str = Form(""),
         appearance: str = Form(""),
         portrait: str = Form(""),
-):
+) -> Response:
     return await _edit_entity(
         template="character/yours_edit.html",
         request=request,
@@ -66,7 +67,7 @@ async def characters_yours_new(
         context_entity_key="character",
         fetch_func=lambda session, context: Character(),
         populate_func=_populate_character,
-        redirect="characters_yours_edit",
+        redirect="characters_yours_edit_get",
         redirect_id_field="character_id",
         require_player=True,
         name=name,
@@ -77,7 +78,7 @@ async def characters_yours_new(
 
 
 @character_plugin_router.get("/{current_game_id}/character/yours/edit/{character_id}")
-async def characters_yours_edit(request: Request, current_game_id: int, character_id: int):
+async def characters_yours_edit_get(request: Request, current_game_id: int, character_id: int) -> Response:
     return await _edit_entity(
         template="character/yours_edit.html",
         request=request,
@@ -91,7 +92,7 @@ async def characters_yours_edit(request: Request, current_game_id: int, characte
 
 
 @character_plugin_router.post("/{current_game_id}/character/yours/edit/{character_id}")
-async def characters_yours_edit(
+async def characters_yours_edit_post(
         request: Request,
         current_game_id: int,
         character_id: int,
@@ -99,7 +100,7 @@ async def characters_yours_edit(
         status: str = Form(""),
         appearance: str = Form(""),
         portrait: str = Form(""),
-):
+) -> Response:
     return await _edit_entity(
         template="character/yours_edit.html",
         request=request,
@@ -118,10 +119,11 @@ async def characters_yours_edit(
 
 
 @character_plugin_router.post("/{current_game_id}/character/yours/delete/{character_id}")
-async def characters_yours_delete(request: Request, current_game_id: int, character_id: int):
+async def characters_yours_delete(request: Request, current_game_id: int, character_id: int) -> Response:
     with get_session() as session:
         context = await RequestContext.build(session, request, current_game_id)
         if await check_permissions(context, require_player=True):
+            assert context.current_user
             if character := Character.get(session, current_game_id, context.current_user.id, character_id):
                 session.delete(character)
                 session.commit()
@@ -134,7 +136,7 @@ async def characters_yours_delete(request: Request, current_game_id: int, charac
 
 
 @character_plugin_router.get("/{current_game_id}/character/locations")
-async def characters_locations(request: Request, current_game_id: int):
+async def characters_locations(request: Request, current_game_id: int) -> Response:
     with get_session() as session:
         context = await RequestContext.build(session, request, current_game_id)
         if await check_permissions(context, require_gm=True):
@@ -143,7 +145,7 @@ async def characters_locations(request: Request, current_game_id: int):
 
 
 @character_plugin_router.get("/{current_game_id}/character/locations/new")
-async def characters_locations_new(request: Request, current_game_id: int):
+async def characters_locations_new_get(request: Request, current_game_id: int) -> Response:
     return await _edit_entity(
         template="character/locations_edit.html",
         request=request,
@@ -155,13 +157,13 @@ async def characters_locations_new(request: Request, current_game_id: int):
 
 
 @character_plugin_router.post("/{current_game_id}/character/locations/new")
-async def characters_locations_new(
+async def characters_locations_new_post(
         request: Request,
         current_game_id: int,
         name: str = Form(""),
         category: str = Form(""),
         description: str = Form(""),
-):
+) -> Response:
     return await _edit_entity(
         template="character/locations_edit.html",
         request=request,
@@ -169,7 +171,7 @@ async def characters_locations_new(
         context_entity_key="location",
         fetch_func=lambda session, context: Location(),
         populate_func=_populate_location,
-        redirect="characters_locations_edit",
+        redirect="characters_locations_edit_get",
         redirect_id_field="location_id",
         require_gm=True,
         name=name,
@@ -179,7 +181,7 @@ async def characters_locations_new(
 
 
 @character_plugin_router.get("/{current_game_id}/character/locations/edit/{location_id}")
-async def characters_locations_edit(request: Request, current_game_id: int, location_id: int):
+async def characters_locations_edit_get(request: Request, current_game_id: int, location_id: int) -> Response:
     return await _edit_entity(
         template="character/locations_edit.html",
         request=request,
@@ -191,7 +193,7 @@ async def characters_locations_edit(request: Request, current_game_id: int, loca
 
 
 @character_plugin_router.post("/{current_game_id}/character/locations/edit/{location_id}")
-async def characters_locations_edit(
+async def characters_locations_edit_post(
         request: Request,
         current_game_id: int,
         location_id: int,
@@ -206,8 +208,8 @@ async def characters_locations_edit(
         timer: int = Form(0),
         locked: bool = Form(False),
         hidden: bool = Form(False),
-):
-    common_params = dict(
+) -> Response:
+    common_params: dict[str, Any] = dict(
         template="character/locations_edit.html",
         request=request,
         game_id=current_game_id,
@@ -253,7 +255,7 @@ async def characters_locations_edit(
 
 
 @character_plugin_router.post("/{current_game_id}/character/locations/delete/{location_id}")
-async def characters_locations_delete(request: Request, current_game_id: int, location_id: int):
+async def characters_locations_delete(request: Request, current_game_id: int, location_id: int) -> Response:
     with get_session() as session:
         context = await RequestContext.build(session, request, current_game_id)
         if await check_permissions(context, require_gm=True):
@@ -271,7 +273,7 @@ async def characters_locations_delete(request: Request, current_game_id: int, lo
 async def _edit_entity(
         template: str,
         request: Request,
-        game_id: id,
+        game_id: int,
         context_entity_key: str,
         fetch_func: Callable,
         populate_func: Optional[Callable] = None,
@@ -281,9 +283,10 @@ async def _edit_entity(
         require_player: bool = False,
         require_spectator: bool = False,
         **data: Any
-):
+) -> Response:
     with get_session() as session:
         context = await RequestContext.build(session, request, game_id)
+        assert context.current_game
         _add_constants(context)
         if await check_permissions(
                 context, require_gm=require_gm, require_player=require_player, require_spectator=require_spectator
@@ -331,6 +334,9 @@ def _populate_character(
         status: str,
         appearance: str,
 ) -> Character:
+    assert context.current_game
+    assert context.current_user
+
     character.game_guild_id = context.current_game.guild_id
     character.member_id = context.current_user.id
     character.name = name.strip()
@@ -383,6 +389,8 @@ def _populate_location(
         category: str,
         description: str,
 ) -> Location:
+    assert context.current_game
+
     location.game_guild_id = context.current_game.guild_id
     location.name = name.strip()
     location.category = category.strip()
@@ -429,6 +437,7 @@ def _add_connection(
         locked: bool,
         hidden: bool,
 ) -> Location:
+    assert context.current_game
     validation_errors = []
     other_location = Location.get(session, context.current_game.guild_id, other_location_id)
     if timer < 0:
@@ -511,6 +520,7 @@ def _delete_connection(
 
 
 def _fetch_location(session: Session, context: RequestContext, location_id: int) -> Optional[Location]:
+    assert context.current_game
     context.extra["other_locations"] = defaultdict(list)
     if location := Location.get(session, context.current_game.guild_id, location_id):
         for other_location in Location.get_all(session, context.current_game.guild_id):
