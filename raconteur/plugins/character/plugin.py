@@ -1,49 +1,63 @@
 import asyncio
 import random
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, Union, AsyncIterable
+from typing import Optional, Union, AsyncIterable, TYPE_CHECKING
 
-from discord import Member, CategoryChannel, PermissionOverwrite, Guild, Message, TextChannel
+from discord import Member, CategoryChannel, PermissionOverwrite, Guild, Message, TextChannel, Reaction
 from fastapi import APIRouter
 from sqlalchemy.orm import Session
 
 from raconteur.commands import command, CommandCallContext
 from raconteur.exceptions import CommandException
 from raconteur.models.base import get_session
+from raconteur.models.game import Game
 from raconteur.plugin import Plugin
-from raconteur.plugins.character.communication import send_broadcast, send_status, relay_message
+from raconteur.plugins.character.communication import send_broadcast, send_status, relay_message, send_message_copies
 from raconteur.plugins.character.models import Character, Connection, Location, CHARACTER_STATUS_MAX_LENGTH
 from raconteur.plugins.character.web import character_plugin_router, characters_all, characters_yours, \
     characters_locations
+from raconteur.utils import get_or_create_channel_by_name
+
+if TYPE_CHECKING:
+    from raconteur.bot import RaconteurBot
+
+INTERCEPTION_CATEGORY = "GM"
+INTERCEPTION_CHANNEL = "interception"
+
+
+@dataclass
+class InterceptedMessage:
+    original_message_id: int
+    location_id: int
+    character_id: int
 
 
 class CharacterPlugin(Plugin):
+    intercepted: dict[int, InterceptedMessage]
+
     @classmethod
     def assert_models(cls) -> None:
         assert Character
         assert Connection
         assert Location
 
+    def __init__(self, bot: "RaconteurBot"):
+        super().__init__(bot)
+        self.intercepted = {}
+
     async def on_message(self, message: Message) -> None:
         with get_session() as session:
-            channels = []
-            if author := Character.get_for_channel(session, message.channel.id, message.author.id):
-                # This is a player channel, broadcast to the other players and the GM
-                if author.location:
-                    for character in author.location.characters:
-                        if character.channel_id:
-                            channels.append(message.guild.get_channel(character.channel_id))
-                    if author.location.channel_id:
-                        channels.append(message.guild.get_channel(author.location.channel_id))
-            elif location := Location.get_for_channel(session, message.guild.id, message.channel.id):
-                # This is a GM channel, broadcast to the players
-                for character in location.characters:
-                    if character.channel_id:
-                        channels.append(message.guild.get_channel(character.channel_id))
-            if channels:
-                await relay_message(message, [c for c in channels if c], author=author)
-                await message.delete()
+            # Check if this is a reply to an intercepted message
+            if message.reference and (intercepted := self.intercepted.get(message.reference.message_id)):
+                await self.handle_interception(session, message, intercepted)
+                interception_channel = await _get_or_create_interception_channel(message.guild)  # type: ignore
+                interception_message: Message = await interception_channel.fetch_message(message.reference.message_id)
+                await interception_message.clear_reactions()
+            else:
+                # Otherwise try to process it as a location message
+                await self.handle_location_message(session, message)
 
     async def on_typing(self, channel: TextChannel, member: Member) -> None:
         with get_session() as session:
@@ -59,6 +73,85 @@ class CharacterPlugin(Plugin):
                     if relay_channel := channel.guild.get_channel(character.channel_id):
                         typings.append(relay_channel.trigger_typing())
                 await asyncio.gather(*typings)
+
+    async def on_reaction_add(self, reaction: Reaction, user: Member) -> None:
+        if reaction.message.id in self.intercepted and (intercepted := self.intercepted.get(reaction.message.id)):
+            with get_session() as session:
+                author = Character.get_by_id(session, reaction.message.guild.id, intercepted.character_id)
+                if not author:
+                    return
+                if reaction.emoji == "✅":
+                    await self.handle_interception(session, reaction.message, intercepted)
+                    await reaction.message.clear_reactions()
+                elif reaction.emoji == "❌":
+                    author_channel: TextChannel = reaction.message.guild.get_channel(author.channel_id)
+                    if author_channel:
+                        await author_channel.send("Your message has been blocked by the GM.")
+                    await reaction.message.clear_reactions()
+
+    async def handle_interception(self, session: Session, message: Message, intercepted: InterceptedMessage) -> None:
+        location = Location.get(session, message.guild.id, intercepted.location_id)
+        author = Character.get_by_id(session, message.guild.id, intercepted.character_id)
+        if not location or not author:
+            return
+
+        channels = []
+        for character in location.characters:
+            if character.channel_id:
+                channels.append(message.guild.get_channel(character.channel_id))
+        if location.channel_id:
+            channels.append(message.guild.get_channel(location.channel_id))
+
+        await relay_message(message, [c for c in channels if c], author=author)
+        del self.intercepted[intercepted.original_message_id]
+
+    async def handle_location_message(self, session: Session, message: Message) -> None:
+        channels = []
+        if author := Character.get_for_channel(session, message.channel.id, message.author.id):
+            # This is a player channel, broadcast to the other players and the GM
+            if author.location:
+                if author.intercept:
+                    game: Game = author.game
+                    interception_channel = await _get_or_create_interception_channel(
+                        message.guild,  # type: ignore
+                        gm_role_id=game.gm_role_id,
+                        spectator_role_id=game.spectator_role_id,
+                    )
+                    await interception_channel.send(
+                        f"The following message from **{author.name}** has been intercepted:"
+                    )
+                    copied_message = (await send_message_copies(
+                        [interception_channel], message.content, message.attachments
+                    ))[0]
+                    self.intercepted[copied_message.id] = InterceptedMessage(
+                        original_message_id=copied_message.id,
+                        location_id=author.location.id,
+                        character_id=author.id
+                    )
+                    await asyncio.gather(
+                        copied_message.add_reaction("✅"),
+                        copied_message.add_reaction("❌"),
+                        message.channel.send(
+                            "Your message is being held up for examination by the GM, please wait.",
+                            delete_after=10 * 60,
+                        ),
+                        message.delete(),
+                    )
+                    return
+                else:
+                    for character in author.location.characters:
+                        if character.channel_id:
+                            channels.append(message.guild.get_channel(character.channel_id))
+                    if author.location.channel_id:
+                        channels.append(message.guild.get_channel(author.location.channel_id))
+        elif location := Location.get_for_channel(session, message.guild.id, message.channel.id):
+            # This is a GM channel, broadcast to the players
+            for character in location.characters:
+                if character.channel_id:
+                    channels.append(message.guild.get_channel(character.channel_id))
+        if channels:
+            await relay_message(message, [c for c in channels if c], author=author)
+            await message.delete()
 
     @command(
         help_msg="Synchronizes the locations in the database with the channels on the server.",
@@ -246,6 +339,26 @@ class CharacterPlugin(Plugin):
             else:
                 return f"**{ctx.message.author.display_name}**" + roll_message
 
+    @command(help_msg="Toggles a character's messages for interception by the GM.", requires_gm=True)
+    async def intercept(self, ctx: CommandCallContext, player: Member, name: Optional[str] = None) -> str:
+        with get_session() as session:
+            character = _get_character_implicit(session, player, name)
+            character.intercept = not character.intercept
+            session.commit()
+            game = ctx.get_game(session)
+            channel = await _get_or_create_interception_channel(
+                ctx.guild, gm_role_id=game.gm_role_id, spectator_role_id=game.spectator_role_id
+            )
+            if character.intercept:
+                return (
+                    f"**{character.name}**'s messages are now being intercepted in {channel.mention}:\n"
+                    f"- React to a message with :white_check_mark: to allow it"
+                    f"- React to a message with :x: to block it"
+                    f"- Reply to a message to replace the original text with the new text in your reply."
+                )
+            else:
+                return f"**{character.name}**'s messages are no longer being intercepted."
+
     @staticmethod
     async def move_character(guild: Guild, character: Character, new_location: Location) -> None:
         character.last_movement = datetime.utcnow()
@@ -299,3 +412,30 @@ def _get_character_implicit(session: Session, player: Member, name: Optional[str
 def _get_character_fuzzy(session: Session, member: Member, name: str) -> Optional[Character]:
     # TODO Actually make this fuzzy
     return Character.get_by_name_and_member(session, member.guild.id, member.id, name)
+
+
+async def _get_or_create_interception_channel(
+        guild: Guild,
+        gm_role_id: Optional[int] = None,
+        spectator_role_id: Optional[int] = None,
+) -> TextChannel:
+    """Gets the channel which holds intercepted messages, or creates it if missing.
+
+    The GM role ID and spectator role ID should be specified if the channel is being created, but as a convenience, they
+    can be left empty if it is certain the channel exists (for example when handling reacts to messages inside it).
+    """
+    overwrites = {
+        guild.default_role: PermissionOverwrite(read_messages=False),
+        guild.me: PermissionOverwrite(read_messages=True, send_messages=True),
+        guild.get_role(gm_role_id): PermissionOverwrite(read_messages=True, send_messages=True),
+        guild.get_role(spectator_role_id): PermissionOverwrite(
+            read_messages=True, send_messages=False
+        ),
+    } if gm_role_id and spectator_role_id else None
+    return await get_or_create_channel_by_name(
+        guild,
+        INTERCEPTION_CHANNEL,
+        INTERCEPTION_CATEGORY,
+        create_channel_permissions=overwrites,
+        create_category_permissions=overwrites,
+    )

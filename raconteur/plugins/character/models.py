@@ -91,6 +91,7 @@ class Character(PluginModelMixin, Base):
     portrait = Column(String)
     channel_id = Column(Integer, unique=True)
     last_movement = Column(DateTime)
+    intercept = Column(Boolean, default=False, nullable=False)
     location_id = Column(Integer, ForeignKey(Location.id), nullable=True)
     location = relationship(Location, back_populates="characters", uselist=False)
 
@@ -98,6 +99,13 @@ class Character(PluginModelMixin, Base):
     def get(cls, session: Session, guild_id: int, member_id: int, character_id: int) -> Optional[Character]:
         row = session.execute(select(Character).where(
             Character.game_guild_id == guild_id, Character.member_id == member_id, Character.id == character_id,
+        )).one_or_none()
+        return row[0] if row else None
+
+    @classmethod
+    def get_by_id(cls, session: Session, guild_id: int, character_id: int) -> Optional[Character]:
+        row = session.execute(select(Character).where(
+            Character.game_guild_id == guild_id, Character.id == character_id,
         )).one_or_none()
         return row[0] if row else None
 

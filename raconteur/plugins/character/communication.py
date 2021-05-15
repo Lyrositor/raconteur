@@ -3,7 +3,7 @@ from datetime import datetime
 from io import BytesIO
 from typing import Iterable, Optional
 
-from discord import Guild, Embed, TextChannel, Message, File
+from discord import Guild, Embed, TextChannel, Message, File, Attachment
 
 from raconteur.messages import send_message
 from raconteur.plugins.character.models import Location, Character
@@ -12,30 +12,27 @@ from raconteur.plugins.character.models import Location, Character
 async def relay_message(message: Message, channels: Iterable[TextChannel], author: Optional[Character] = None) -> None:
     intro = f"__**{author.name}**__\n" if author else ""
     formatted_message = f"{intro}{message.content}"
-    attachments_data = await asyncio.gather(*[
-        attachment.read() for attachment in message.attachments
-    ]) if message.attachments else None
+    await send_message_copies(channels, formatted_message, message.attachments)
+
+
+async def send_message_copies(
+        channels: Iterable[TextChannel], text: str, attachments: Optional[list[Attachment]] = None
+) -> list[Message]:
+    attachments_data = await asyncio.gather(*[attachment.read() for attachment in attachments]) if attachments else None
 
     relays = []
     for channel in channels:
         files = None
-        if attachments_data:
+        if attachments and attachments_data:
             # The files need to be recreated because the .close() method is called on each of them once they are sent,
             # preventing them from being reused
             files = [
-                File(
-                    BytesIO(attachment_data),
-                    filename=message.attachments[i].filename,
-                    spoiler=message.attachments[i].is_spoiler()
-                )
+                File(BytesIO(attachment_data), filename=attachments[i].filename, spoiler=attachments[i].is_spoiler())
                 for i, attachment_data in enumerate(attachments_data)
             ]
-        relays.append(send_message(
-            channel,
-            formatted_message,
-            files=files,
-        ))
-    await asyncio.gather(*relays)
+        relays.append(send_message(channel, text, files=files))
+    copied_messages = await asyncio.gather(*relays)
+    return copied_messages  # type: ignore
 
 
 async def send_broadcast(guild: Guild, location: Location, text: str) -> None:

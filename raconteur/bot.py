@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Iterable, Union
 
-from discord import Intents, Client, Message, Guild, Member, TextChannel
+from discord import Intents, Client, Message, Guild, Member, TextChannel, Reaction
 from discord.abc import Messageable, User
 
 from raconteur.commands import is_possible_command
@@ -44,9 +44,16 @@ class RaconteurBot(Client):
         if not isinstance(channel, TextChannel) or not isinstance(user, Member):
             return
 
-        enabled_plugins = list(self.get_enabled_plugins(channel.guild))
-        for plugin in enabled_plugins:
+        for plugin in self.get_enabled_plugins(channel.guild):
             await plugin.on_typing(channel, user)
+
+    async def on_reaction_add(self, reaction: Reaction, user: Union[Member, User]) -> None:
+        # Ignore anything but a react in a guild from another user
+        if not isinstance(user, Member) or user == self.user:
+            return
+
+        for plugin in self.get_enabled_plugins(reaction.message.guild):
+            await plugin.on_reaction_add(reaction, user)
 
     def get_enabled_plugins(self, guild: Guild) -> Iterable[Plugin]:
         with get_session() as session:

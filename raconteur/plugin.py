@@ -5,7 +5,7 @@ import logging
 from functools import partial
 from typing import Optional, ClassVar, TYPE_CHECKING, Union
 
-from discord import Message, Member, TextChannel
+from discord import Message, Member, TextChannel, Reaction
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import Column, ForeignKey
@@ -39,7 +39,7 @@ class PluginModelMixin:
 
     # noinspection PyMethodParameters
     @declared_attr
-    def guild(cls) -> RelationshipProperty:
+    def game(cls) -> RelationshipProperty:
         return relationship(Game)
 
 
@@ -85,6 +85,9 @@ class Plugin:
         pass
 
     async def on_typing(self, channel: TextChannel, member: Member) -> None:
+        pass
+
+    async def on_reaction_add(self, reaction: Reaction, user: Member) -> None:
         pass
 
     def get_commands(self) -> dict[str, Command]:
