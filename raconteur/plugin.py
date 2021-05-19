@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from dataclasses import dataclass
 from functools import partial
 from typing import Optional, ClassVar, TYPE_CHECKING, Union
 
@@ -20,6 +21,12 @@ from raconteur.queries import get_or_create_game
 
 if TYPE_CHECKING:
     from raconteur.bot import RaconteurBot
+
+
+@dataclass
+class Permissions:
+    is_gm: bool = False
+    is_player: bool = False
 
 
 @declarative_mixin
@@ -67,7 +74,7 @@ class Plugin:
                         await send_message(message.channel, result.text)
             except CommandException as e:
                 await message.add_reaction("🚫")
-                await send_message(message.channel, f"Failed to process command: {e}")
+                await send_message(message.channel, str(e))
             except Exception as e:
                 await message.add_reaction("🚫")
                 await send_message(message.channel, f"Failed to process command: Unknown error")
@@ -124,19 +131,24 @@ class Plugin:
 
 def has_permission_for_command(command: Command, message: Message) -> bool:
     if command.requires_player or command.requires_gm:
-        with get_session() as session:
-            game = get_or_create_game(
-                session,
-                message.guild  # type: ignore
-            )
-            is_gm = is_player = False
-            for role in message.author.roles:
-                is_gm |= role.id == game.gm_role_id
-                is_player |= role.id == game.player_role_id
-        if command.requires_gm and not is_gm:
+        permissions = get_permissions_for_member(message.author)
+        if command.requires_gm and not permissions.is_gm:
             return False
-        if command.requires_player and not is_player:
+        if command.requires_player and not permissions.is_player:
             return False
         return True
     else:
         return True
+
+
+def get_permissions_for_member(member: Member) -> Permissions:
+    permissions = Permissions()
+    with get_session() as session:
+        game = get_or_create_game(
+            session,
+            member.guild,
+        )
+        for role in member.roles:
+            permissions.is_gm |= role.id == game.gm_role_id
+            permissions.is_player |= role.id == game.player_role_id
+    return permissions

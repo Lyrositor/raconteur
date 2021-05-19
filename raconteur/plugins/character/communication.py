@@ -4,9 +4,10 @@ from io import BytesIO
 from typing import Iterable, Optional
 
 from discord import Guild, Embed, TextChannel, Message, File, Attachment
+from jinja2 import Environment, Template
 
 from raconteur.messages import send_message
-from raconteur.plugins.character.models import Location, Character
+from raconteur.plugins.character.models import Location, Character, CharacterTraitType
 
 
 async def relay_message(message: Message, channels: Iterable[TextChannel], author: Optional[Character] = None) -> None:
@@ -70,7 +71,13 @@ async def send_status(guild: Guild, character: Character) -> None:
             business = f"Looks it's been very quiet here recently."
 
         # TODO Template the description with Jinja2
-        embed = Embed(title=f"{character.location.name}", description=f"{character.location.description}")
+        environment = Environment(autoescape=False)
+        template: Template = environment.from_string(character.location.description)
+        description = template.render(
+            character_name=character.name,
+            flag={trait.name: trait.value for trait in character.traits if trait.type == CharacterTraitType.FLAG},
+        )
+        embed = Embed(title=character.location.name, description=description)
         for character in character.location.characters:
             embed.add_field(name=character.name, value=character.status or "(Unknown status)", inline=True)
         embed.set_footer(text=business)

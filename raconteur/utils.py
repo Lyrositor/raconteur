@@ -1,6 +1,7 @@
-from typing import Optional, Any
+from typing import Optional, Any, Iterable
 
 from discord import Guild, TextChannel, PermissionOverwrite, CategoryChannel
+from fuzzywuzzy.process import extractOne
 
 
 async def get_or_create_channel_by_name(
@@ -43,4 +44,11 @@ def get_category_by_name(guild: Guild, category_name: str) -> Optional[CategoryC
     for category in guild.categories:
         if category.name == category_name:
             return category
+    return None
+
+
+def fuzzy_search(query: str, options: Iterable[str]) -> Optional[str]:
+    result = extractOne(query, sorted(options), score_cutoff=50)
+    if result is not None:
+        return result[0]
     return None

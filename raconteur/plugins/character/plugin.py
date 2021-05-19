@@ -15,10 +15,12 @@ from raconteur.models.base import get_session
 from raconteur.models.game import Game
 from raconteur.plugin import Plugin
 from raconteur.plugins.character.communication import send_broadcast, send_status, relay_message, send_message_copies
-from raconteur.plugins.character.models import Character, Connection, Location, CHARACTER_STATUS_MAX_LENGTH
+from raconteur.plugins.character.connections import toggle_lock, get_connection, toggle_hidden
+from raconteur.plugins.character.models import Character, Connection, Location, CHARACTER_STATUS_MAX_LENGTH, \
+    CharacterTrait, CharacterTraitType
 from raconteur.plugins.character.web import character_plugin_router, characters_all, characters_yours, \
     characters_locations
-from raconteur.utils import get_or_create_channel_by_name
+from raconteur.utils import get_or_create_channel_by_name, fuzzy_search
 
 if TYPE_CHECKING:
     from raconteur.bot import RaconteurBot
@@ -164,6 +166,7 @@ class CharacterPlugin(Plugin):
             game = ctx.get_game(session)
 
             channel_operations = []
+            locations_without_channels = []
             locations = Location.get_all(session, ctx.guild.id)
             for location in locations:
                 if ctx.guild.get_channel(location.channel_id):
@@ -185,11 +188,11 @@ class CharacterPlugin(Plugin):
                 channel_operations.append(
                     ctx.guild.create_text_channel(location.name, overwrites=overwrites, category=category_channel)
                 )
+                locations_without_channels.append(location)
 
             new_channels = await asyncio.gather(*channel_operations)
             for i, new_channel in enumerate(new_channels):
-                location = locations[i]
-                location.channel_id = new_channel.id
+                locations_without_channels[i].channel_id = new_channel.id
             session.commit()
             if new_channels:
                 yield "Created the following channels:" + "".join(f"\n- <#{channel.id}>" for channel in new_channels)
@@ -229,9 +232,7 @@ class CharacterPlugin(Plugin):
     )
     async def status(self, ctx: CommandCallContext, status: Optional[str] = None) -> Optional[str]:
         with get_session() as session:
-            character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
-            if not character:
-                return f"Cannot process command: none of your characters are associated with this channel."
+            character = _get_channel_character(ctx, session)
             if status is None:
                 await send_status(ctx.guild, character)
             else:
@@ -243,27 +244,40 @@ class CharacterPlugin(Plugin):
             return None
 
     @command(
-        help_msg="Moves your character to another location.",
+        help_msg="Moves your character to another location. If location is not specified, lists possible destinations "
+                 "instead.",
         requires_player=True,
     )
-    async def move(self, ctx: CommandCallContext, location: str) -> Optional[str]:
-        location = location.strip()
+    async def move(self, ctx: CommandCallContext, location: Optional[str] = None) -> Optional[str]:
         with get_session() as session:
-            character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
-            if not character:
-                return f"Cannot move to `{location}`: none of your characters are associated with this channel."
+            character = _get_channel_character(ctx, session)
             if not character.location:
-                return f"Cannot move to `{location}`: your character isn't in any location yet."
-            new_location = Location.get_by_name(session, ctx.guild.id, location)
-            for connection in character.location.connections:
-                if not connection.hidden and new_location and new_location in (
-                        connection.location_1, connection.location_2
-                ):
-                    break
-            else:
-                return f"Cannot move to `{location}`: no connection from `{character.location.name}`."
+                raise CommandException(f"Cannot move: your character isn't in any location yet.")
+            if not location:
+                # No new location specified, display a list of possible destinations
+                destinations = []
+                for connection in character.location.connections:
+                    if connection.hidden:
+                        continue
+                    destination = (
+                        connection.location_1 if connection.location_1 != character.location else connection.location_2
+                    ).name
+                    if connection.locked:
+                        destination = f"*{destination}* (locked or unavailable)"
+                    destinations.append(f"- {destination}")
+                if destinations:
+                    return f"The following destinations are available from `{character.location.name}`:\n" + "\n".join(
+                        destinations
+                    )
+                else:
+                    return f"There are no destinations available from here."
+
+            location = location.strip()
+            connection, new_location = get_connection(session, character.location, location, False)
+            if not connection or not new_location:
+                raise CommandException(f"Cannot move to `{location}`: no connection from `{character.location.name}`.")
             if connection.locked:
-                return f"Cannot move to `{location}`: `{new_location.name}` is locked off."
+                raise CommandException(f"Cannot move to `{location}`: `{new_location.name}` is locked off.")
 
             # Check if enough time has passed to make the move to this location
             next_movement = character.last_movement + timedelta(minutes=connection.timer)
@@ -279,8 +293,7 @@ class CharacterPlugin(Plugin):
                     )
                 else:
                     time_remaining = f"{seconds} second" + ("s" if seconds != 1 else "")
-                return f"Cannot move to `{location}: {time_remaining} left before you can move there." \
-                       f""
+                raise CommandException(f"Cannot move to `{location}: {time_remaining} left before you can move there.")
 
             await self.move_character(ctx.guild, character, new_location)
             session.commit()
@@ -296,15 +309,196 @@ class CharacterPlugin(Plugin):
         location = location.strip()
         with get_session() as session:
             character = _get_character_implicit(session, player, name)
+            if not character:
+                raise CommandException(f"Cannot force move: unknown character.")
             new_location = Location.get_by_name(session, ctx.guild.id, location)
             if not new_location:
-                return f"Cannot force move **{character.name}** to `{location}`: unknown location."
+                raise CommandException(f"Cannot force move **{character.name}** to `{location}`: unknown location.")
             if character.location == new_location:
-                return f"Cannot force move **{character.name}** to `{location}`: character is already in that location."
+                raise CommandException(
+                    f"Cannot force move **{character.name}** to `{location}`: character is already in that location."
+                )
 
             await self.move_character(ctx.guild, character, new_location)
             session.commit()
             return f"Force moved {character.name} to `{location}`"
+
+    @command(
+        help_msg="Gives a key to the named character between the two specified locations. The name must be unique for "
+                 "that character.",
+        requires_gm=True,
+    )
+    async def key_give(
+            self,
+            ctx: CommandCallContext,
+            key_name: str,
+            location_1: str,
+            location_2: str,
+            player: Member,
+            character_name: Optional[str] = None
+    ) -> str:
+        location_1 = location_1.strip()
+        location_2 = location_2.strip()
+        key_name = key_name.strip()
+        with get_session() as session:
+            character = _get_character_implicit(session, player, character_name)
+            if not character:
+                raise CommandException(f"Cannot give key: unknown character.")
+            location_1_obj = Location.get_by_name(session, ctx.guild.id, location_1)
+            if not location_1_obj:
+                raise CommandException(f"Cannot give key: unknown location `{location_1}`.")
+            location_2_obj = Location.get_by_name(session, ctx.guild.id, location_2)
+            if not location_2_obj:
+                raise CommandException(f"Cannot give key: unknown location `{location_2}`.")
+            for connection in location_1_obj.connections:
+                if location_2_obj in (connection.location_1, connection.location_2):
+                    break
+            else:
+                raise CommandException(f"Cannot give key: no connection between `{location_1}` and `{location_2}`.")
+            if character.has_key(connection):
+                raise CommandException(f"Cannot give key: **{character.name}** already has a key for this connection.")
+            elif next((
+                    trait for trait in character.traits
+                    if trait.type == CharacterTraitType.KEY and trait.name == key_name
+            ), None):
+                raise CommandException(
+                    f"Cannot give key: a key with the name **{key_name}** already exists for this character."
+                )
+            else:
+                key = CharacterTrait()
+                key.game = character.game
+                key.character = character
+                key.name = key_name
+                key.type = CharacterTraitType.KEY
+                key.value = str(connection.id)
+                character.traits.append(key)
+                session.commit()
+                return (
+                    f"The key **{key_name}** from `{location_1}` to `{location_2}` has been given to "
+                    f"**{character.name}**."
+                )
+
+    @command(help_msg="Removes a character's key by its name.", requires_gm=True)
+    async def key_remove(
+            self,
+            key_name: str,
+            player: Member,
+            character_name: Optional[str] = None
+    ) -> str:
+        key_name = key_name.strip()
+        with get_session() as session:
+            character = _get_character_implicit(session, player, character_name)
+            if not character:
+                raise CommandException(f"Cannot remove key: unknown character.")
+            for trait in character.traits:
+                if trait.type == CharacterTraitType.KEY and trait.name == key_name:
+                    connection = session.get(Connection, int(trait.value))
+                    if connection:
+                        path = f"from `{connection.location_1.name}` to `{connection.location_2.name}`"
+                    else:
+                        path = "for a removed connection"
+                    session.delete(trait)
+                    session.commit()
+                    return f"The key **{key_name}** {path} has been removed from **{character.name}**."
+            else:
+                raise CommandException(
+                    f"Cannot remove key: character **{character.name}** does not own a key named **{key_name}**."
+                )
+
+    @command(help_msg="Locks the connection to a location.")
+    async def lock(self, ctx: CommandCallContext, location: str) -> Optional[str]:
+        return await toggle_lock(ctx, location, True)
+
+    @command(help_msg="Unlocks the connection to a location.")
+    async def unlock(self, ctx: CommandCallContext, location: str) -> Optional[str]:
+        return await toggle_lock(ctx, location, False)
+
+    @command(help_msg="Hides the connection to a location.", requires_gm=True)
+    async def hide(self, ctx: CommandCallContext, location: str) -> Optional[str]:
+        return await toggle_hidden(ctx, location, True)
+
+    @command(help_msg="Reveals the connection to a location.", requires_gm=True)
+    async def reveal(self, ctx: CommandCallContext, location: str) -> Optional[str]:
+        return await toggle_hidden(ctx, location, False)
+
+    @command(
+        help_msg="Lists the items held in your inventory.",
+        requires_player=True
+    )
+    async def inventory(self, ctx: CommandCallContext) -> Optional[str]:
+        with get_session() as session:
+            character = _get_channel_character(ctx, session)
+            inventory_items = "\n".join(f"- **{item.name}**: {item.value}" for item in character.get_inventory())
+            if inventory_items:
+                return f"**{character.name}** has the following in their inventory:\n{inventory_items}"
+            return f"**{character.name}** doesn't have anything in their inventory."
+
+    @command(
+        help_msg="Picks up an item with the name and description of your choice and puts it in your inventory.",
+        requires_player=True
+    )
+    async def pickup(self, ctx: CommandCallContext, name: str, description: str) -> None:
+        name = name.strip()
+        description = description.strip()
+        with get_session() as session:
+            character = _get_channel_character(ctx, session)
+            if not character.location:
+                raise CommandException(f"Cannot pickup **{name}**: your character isn't in any location yet.")
+            if any(item.name == name for item in character.get_inventory()):
+                raise CommandException(f"Cannot pickup **{name}**: your character is already carrying this item.")
+            item = CharacterTrait()
+            item.game = character.game
+            item.character = character
+            item.type = CharacterTraitType.ITEM
+            item.name = name
+            item.value = description
+            character.traits.append(item)
+            session.commit()
+            await send_broadcast(ctx.guild, character.location, f"**{character.name}** picks up **{item.name}**.")
+
+    @command(help_msg="Drops an item held in your inventory.", requires_player=True)
+    async def drop(self, ctx: CommandCallContext, name: str) -> None:
+        name = name.strip()
+        with get_session() as session:
+            character = _get_channel_character(ctx, session)
+            if not character.location:
+                raise CommandException(f"Cannot drop **{name}**: your character isn't in any location yet.")
+            item = next((item for item in character.get_inventory() if item.name == name), None)
+            if not item:
+                raise CommandException(f"Cannot drop **{name}**: your character isn't carrying this item.")
+            session.delete(item)
+            session.commit()
+            await send_broadcast(ctx.guild, character.location, f"**{character.name}** drops **{item.name}**.")
+
+    @command(
+        help_msg="Sets a character's flag to an arbitrary value. Flags do nothing on their own, but can be used to "
+                 "enable conditional descriptions of locations or store arbitrary data for other plugins to use."
+    )
+    async def flag(self, name: str, value: str, player: Member, character_name: Optional[str] = None) -> str:
+        name = name.strip() if name is not None else None
+        value = value.strip() if value is not None else None
+        with get_session() as session:
+            character = _get_character_implicit(session, player, character_name)
+            if not character:
+                raise CommandException(f"Cannot set flag `{name}`: unknown character.")
+            if not re.match(r"^[a-z_]+$", name):
+                raise CommandException(
+                    f"Cannot set flag `{name}`: invalid name, must consist only of lowercase letters and underscores."
+                )
+            for trait in character.traits:
+                if trait.type == CharacterTraitType.FLAG and trait.name == name:
+                    break
+            else:
+                trait = CharacterTrait()
+                trait.game = character.game
+                trait.name = name
+                trait.type = CharacterTraitType.FLAG
+                character.traits.append(trait)
+            trait.value = value
+            session.commit()
+            return f"Successfully set flag `{name}` to \"{value}\"."
+
+    # TODO Add radio commands
 
     @command(help_msg="Rolls a d100.")
     async def d100(self, ctx: CommandCallContext) -> Optional[str]:
@@ -323,9 +517,19 @@ class CharacterPlugin(Plugin):
                 raise CommandException("Invalid roll request")
             num_dice, num_sides = int(match.group(1)), int(match.group(2))
             for _ in range(num_dice):
-                rolls.append((random.randint(1, num_sides), num_sides))
-        total = sum(roll for roll, num_sides in rolls)
-        roll_message = f"rolled **{total}** = " + " + ".join(f"{roll} [d{num_sides}]" for roll, num_sides in rolls)
+                # Special case for the d100
+                if num_sides == 100:
+                    rolls.append((random.randint(0, num_sides - 1), num_sides))
+                else:
+                    rolls.append((random.randint(1, num_sides), num_sides))
+        roll_results = " + ".join(
+            (str(roll).zfill(2) if num_sides == 100 else str(roll)) + f" [d{num_sides}]" for roll, num_sides in rolls
+        )
+        if len(rolls) == 1:
+            roll_message = f"rolled {roll_results}"
+        else:
+            total = sum(roll for roll, num_sides in rolls)
+            roll_message = f"rolled **{total}** = {roll_results}"
         with get_session() as session:
             if location := Location.get_for_channel(session, ctx.guild.id, ctx.channel.id):
                 await send_broadcast(ctx.guild, location, f"**The GM** " + roll_message)
@@ -337,7 +541,7 @@ class CharacterPlugin(Plugin):
                 await send_broadcast(ctx.guild, character.location, f"**{character.name}** " + roll_message)
                 return None
             else:
-                return f"**{ctx.message.author.display_name}**" + roll_message
+                return f"**{ctx.message.author.display_name}** " + roll_message
 
     @command(help_msg="Toggles a character's messages for interception by the GM.", requires_gm=True)
     async def intercept(self, ctx: CommandCallContext, player: Member, name: Optional[str] = None) -> str:
@@ -392,6 +596,13 @@ class CharacterPlugin(Plugin):
         }
 
 
+def _get_channel_character(ctx: CommandCallContext, session: Session) -> Character:
+    character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
+    if not character:
+        raise CommandException(f"Cannot process command: none of your characters are associated with this channel.")
+    return character
+
+
 def _get_character_implicit(session: Session, player: Member, name: Optional[str] = None) -> Character:
     if name:
         character = _get_character_fuzzy(session, player, name.strip())
@@ -410,8 +621,13 @@ def _get_character_implicit(session: Session, player: Member, name: Optional[str
 
 
 def _get_character_fuzzy(session: Session, member: Member, name: str) -> Optional[Character]:
-    # TODO Actually make this fuzzy
-    return Character.get_by_name_and_member(session, member.guild.id, member.id, name)
+    characters_by_name = {
+        character.name: character for character in Character.get_all_of_member(session, member.guild.id, member.id)
+    }
+    exact_name = fuzzy_search(name, characters_by_name.keys())
+    if exact_name is not None:
+        return characters_by_name[exact_name]
+    return None
 
 
 async def _get_or_create_interception_channel(

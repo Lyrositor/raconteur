@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional
+from enum import Enum
+from typing import Optional, Iterable
 
-from sqlalchemy import String, Column, Integer, ForeignKey, DateTime, Boolean, select
+from sqlalchemy import String, Column, Integer, ForeignKey, DateTime, Boolean, select, Enum as EnumType
 from sqlalchemy.orm import relationship, Session
 
 from raconteur.models.base import Base
@@ -13,7 +14,13 @@ CHARACTER_STATUS_MAX_LENGTH = 200
 CHARACTER_APPEARANCE_MAX_LENGTH = 1000
 LOCATION_NAME_MAX_LENGTH = 60
 LOCATION_CATEGORY_MAX_LENGTH = 60
-LOCATION_DESCRIPTION_MAX_LENGTH = 1500
+LOCATION_DESCRIPTION_MAX_LENGTH = 5000
+
+
+class CharacterTraitType(Enum):
+    FLAG = "flag"
+    KEY = "key"
+    ITEM = "item"
 
 
 class Location(PluginModelMixin, Base):
@@ -94,6 +101,19 @@ class Character(PluginModelMixin, Base):
     intercept = Column(Boolean, default=False, nullable=False)
     location_id = Column(Integer, ForeignKey(Location.id), nullable=True)
     location = relationship(Location, back_populates="characters", uselist=False)
+    traits = relationship("CharacterTrait", back_populates="character", cascade="all, delete-orphan")
+
+    def has_key(self, connection: Connection) -> bool:
+        connection_id = str(connection.id)
+        for trait in self.traits:
+            if trait.type == CharacterTraitType.KEY and trait.value == connection_id:
+                return True
+        return False
+
+    def get_inventory(self) -> Iterable[CharacterTrait]:
+        for trait in self.traits:
+            if trait.type == CharacterTraitType.ITEM:
+                yield trait
 
     @classmethod
     def get(cls, session: Session, guild_id: int, member_id: int, character_id: int) -> Optional[Character]:
@@ -143,3 +163,15 @@ class Character(PluginModelMixin, Base):
             Character.channel_id == channel_id, Character.member_id == member_id
         )).one_or_none()
         return row[0] if row else None
+
+
+class CharacterTrait(PluginModelMixin, Base):
+    __plugin__ = "character"
+    __plugin_table_name__ = "characters_traits"
+
+    id = Column(Integer, primary_key=True)
+    character_id = Column(Integer, ForeignKey(Character.id), nullable=True)
+    character = relationship(Character, back_populates="traits")
+    name = Column(String, nullable=False)
+    type = Column(EnumType(CharacterTraitType, create_constraint=False, native_enum=False), nullable=False)
+    value = Column(String)

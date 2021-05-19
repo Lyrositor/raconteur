@@ -23,9 +23,9 @@
 
     <div class="mb-3">
       <label for="description" class="form-label">Description</label>
-      <textarea class="form-control" id="description" name="description" aria-describedby="description-help" rows="6">{{ location.description if location.description }}</textarea>
+      <textarea class="form-control" id="description" name="description" aria-describedby="description-help" rows="6" style="font-family: monospace;">{{ location.description if location.description }}</textarea>
       <div id="description-help" class="form-text">
-        The location's description, to be kept updated over time (max {{ location_description_max_length }} characters). Can be templated.
+        The location's description, to be kept updated over time (max {{ location_description_max_length }} characters). Can be templated with the Jinja2 language; the following variables are available: <code>character_name</code>, <code>flag.*</code> (where <code>*</code> is the name of a flag).
       </div>
     </div>
 

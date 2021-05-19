@@ -20,13 +20,17 @@ class CorePlugin(Plugin):
                     valid_commands.append(str(plugin_command))
         return "\n".join(valid_commands)
 
-    @command(help_msg="Sets up the server for a first run.")
+    @command(help_msg="Sets up the server for a new game.")
     async def init(self, ctx: CommandCallContext) -> AsyncIterable[str]:
-        yield "Initializing game session"
-        # TODO Don't allow re-initialization
 
         with get_session() as session:
             game = ctx.get_game(session)
+
+            if game.gm_role_id and game.player_role_id and game.spectator_role_id:
+                yield "Game session is already initialized"
+                return
+            else:
+                yield "Initializing game session"
 
             role_operations = []
             if not game.gm_role_id:
@@ -53,7 +57,7 @@ class CorePlugin(Plugin):
 
         yield "Initialization complete"
 
-    @command(help_msg="Enables a plugin for this server.")
+    @command(help_msg="Enables a plugin for this server.", requires_gm=True)
     async def plugin_enable(self, ctx: CommandCallContext, name: str) -> str:
         for plugin in self.bot.plugins:
             if plugin.__class__.__name__ == name:
@@ -68,7 +72,7 @@ class CorePlugin(Plugin):
                         return f"Plugin **{name}** has been enabled"
         raise CommandException(f'Unknown plugin "{name}"')
 
-    @command(help_msg="Disables a plugin for this server.")
+    @command(help_msg="Disables a plugin for this server.", requires_gm=True)
     async def plugin_disable(self, ctx: CommandCallContext, name: str) -> str:
         if name == self.__class__.__name__:
             return f"Cannot disable **{self.__class__.__name__}**"

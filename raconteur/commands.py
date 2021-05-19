@@ -156,11 +156,11 @@ class Command:
 
     def __str__(self) -> str:
         params = [
-            f" {'*' if not param.required else ''}{param.name}{'*' if not param.required else ''}"
-            f"{'...' if param.collect else ''}"
+            f"` `{'*' if not param.required else ''}`{param.name}`{'*' if not param.required else ''}"
+            f"{'`...`' if param.collect else ''}"
             for param in self.params
         ]
-        return f"**{COMMAND_PREFIX}{self.name}**{''.join(params)}: {self.help_msg}"
+        return f"**`{COMMAND_PREFIX}{self.name}`**{''.join(params).replace('``', '')}: {self.help_msg}"
 
 
 @dataclass(frozen=True)

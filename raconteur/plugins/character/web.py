@@ -452,6 +452,7 @@ def _add_connection(
 
     if not validation_errors:
         connection = Connection()
+        connection.game = context.current_game
         connection.location_2 = other_location
         connection.timer = timer
         connection.locked = locked
