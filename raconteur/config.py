@@ -11,6 +11,7 @@ class Config(BaseSettings):
     web_debug: bool = False
     web_port: int = 6897
     web_session_secret: str = "please_change_me"
+    web_root_path: str = ""
 
     class Config:
         env_file = ".env"

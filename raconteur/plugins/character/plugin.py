@@ -151,6 +151,7 @@ class CharacterPlugin(Plugin):
             for character in location.characters:
                 if character.channel_id:
                     channels.append(message.guild.get_channel(character.channel_id))
+            channels.append(message.guild.get_channel(location.channel_id))
         if channels:
             await relay_message(message, [c for c in channels if c], author=author)
             await message.delete()
@@ -280,12 +281,12 @@ class CharacterPlugin(Plugin):
                 raise CommandException(f"Cannot move to `{location}`: `{new_location.name}` is locked off.")
 
             # Check if enough time has passed to make the move to this location
-            next_movement = character.last_movement + timedelta(minutes=connection.timer)
+            next_movement = character.last_movement + timedelta(seconds=connection.timer)
             now = datetime.utcnow()
             if next_movement > now:
                 remaining_seconds = (next_movement - now).total_seconds()
                 minutes = remaining_seconds // 60
-                seconds = remaining_seconds % 60
+                seconds = int(remaining_seconds % 60)
                 if remaining_seconds > 59:
                     time_remaining = (
                             f"{minutes} minute" + ("s" if minutes != 1 else "")
@@ -293,7 +294,7 @@ class CharacterPlugin(Plugin):
                     )
                 else:
                     time_remaining = f"{seconds} second" + ("s" if seconds != 1 else "")
-                raise CommandException(f"Cannot move to `{location}: {time_remaining} left before you can move there.")
+                raise CommandException(f"Cannot move to `{location}`: {time_remaining} left before you can move there.")
 
             await self.move_character(ctx.guild, character, new_location)
             session.commit()

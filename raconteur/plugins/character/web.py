@@ -33,8 +33,8 @@ async def characters_all(request: Request, current_game_id: int) -> Response:
 async def characters_yours(request: Request, current_game_id: int) -> Response:
     with get_session() as session:
         context = await RequestContext.build(session, request, current_game_id)
-        assert context.current_user
         if await check_permissions(context, require_player=True):
+            assert context.current_user
             context.extra["characters"] = Character.get_all_of_member(session, current_game_id, context.current_user.id)
         return render_response("character/yours.html", context)
 

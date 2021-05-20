@@ -53,6 +53,7 @@ def run_website() -> None:
         debug=config.web_debug,
         workers=1,
         log_config=LOGGING_CONFIG,
+        root_path=config.web_root_path,
     )
 
 
