@@ -70,7 +70,6 @@ async def send_status(guild: Guild, character: Character) -> None:
         else:
             business = f"Looks it's been very quiet here recently."
 
-        # TODO Template the description with Jinja2
         environment = Environment(autoescape=False)
         template: Template = environment.from_string(character.location.description)
         description = template.render(

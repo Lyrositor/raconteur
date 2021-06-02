@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Your Unknown Armies Sheets{% endblock %}
+
+{% block content %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th scope="col">Character</th>
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sheet in sheets %}
+        <tr>
+          <td>{{ sheet.character.name }}</td>
+          <td>
+            <form method="post" action="{{ url_for('ua_delete', current_game_id=current_game.guild_id, character_id=sheet.character_id) }}">
+              <div class="btn-group me-2" role="group" aria-label="Actions">
+                <a class="btn btn-outline-secondary" href="{{ url_for('ua_edit', current_game_id=current_game.guild_id, character_id=sheet.character_id) }}"><i class="bi bi-pencil"></i></a>
+                <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-trash"></i></button>
+              </div>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <a class="btn btn-primary" href="{{ url_for('ua_new', current_game_id=current_game.guild_id) }}">
+    Create Unknown Armies Sheet
+  </a>
+{% endblock %}

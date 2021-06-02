@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% macro stress(id, label, hardened, failed) -%}
+  <div class="mb-3">
+    <span><strong>{{ label }}:</strong></span>
+    <div class="input-group ps-5">
+      <span class="me-3">Hardened:</span>
+      {% for i in range(0, 11) %}
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="{{ id }}_hardened" id="{{ id }}-hardened-{{ i }}" value="{{ i }}" {% if hardened == i %}checked{% endif %} disabled>
+          <label class="form-check-label" for="{{ id }}-hardened-{{ i }}">{{ i }}</label>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="input-group ps-5">
+      <span class="me-3">Failed:</span>
+      {% for i in range(0, 6) %}
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="{{ id }}_failed" id="{{ id }}-failed-{{ i }}" value="{{ i }}" {% if failed == i %}checked{% endif %} disabled>
+          <label class="form-check-label" for="{{ id }}-failed-{{ i }}">{{ i }}</label>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{%- endmacro %}
+
+{% block title %}{{ character.name }}{% endblock %}
+
+{% block content %}
+  {% if character.status %}
+    <p class="lead"><em>{{ character.status }}</em></p>
+  {% endif %}
+  {% if character.portrait %}
+    <img src="{{ character.portrait }}" class="rounded float-end" style="max-width: 25%" alt="Portrait"/>
+  {% endif %}
+  {% if character.appearance %}
+    <blockquote class="blockquote">
+      <p style="white-space: pre-line">{{ character.appearance }}</p>
+    </blockquote>
+  {% endif %}
+  {% if ua_sheet %}
+    <div style="clear: both;">
+      <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+      <img src="/static/images/unknown_armies.png" alt="Unknown Armies" width="250" style="display: block; margin: 1rem auto;" />
+      <p><strong>Summary:</strong> {{ ua_sheet.summary }}</p>
+      <p><strong>Personality:</strong> {{ ua_sheet.personality }}</p>
+      <p><strong>Obsession:</strong> {{ ua_sheet.obsession }}</p>
+      <p><strong>School:</strong> {% if ua_sheet.school %}{{ ua_sheet.school }}{% else %}<em>None</em>{% endif %}</p>
+
+      <h4>Passions</h4>
+      <p><strong>Fear Passion (linked to {{ ua_sheet.stimulus_fear_madness.value }}):</strong> {{ ua_sheet.stimulus_fear }}</p>
+      <p><strong>Rage Passion:</strong> {{ ua_sheet.stimulus_rage }}</p>
+      <p><strong>Noble Passion:</strong> {{ ua_sheet.stimulus_noble }}</p>
+
+      <h4>Abilities</h4>
+      <p><strong>Body:</strong> {{ ua_sheet.body }}% ({{ ua_sheet.body_descriptor }})</p>
+      <p><strong>Speed:</strong> {{ ua_sheet.speed }}% ({{ ua_sheet.speed_descriptor }})</p>
+      <p><strong>Mind:</strong> {{ ua_sheet.mind }}% ({{ ua_sheet.mind_descriptor }})</p>
+      <p><strong>Soul:</strong> {{ ua_sheet.soul }}% ({{ ua_sheet.soul_descriptor }})</p>
+
+      <h4>Skills</h4>
+      {% for skill in ua_sheet.skills %}
+        <p><strong>{{ skill.name }} [{{ skill.ability.value }}]{% if skill.is_obsession %} (Obsession){% endif %}:</strong> {{ skill.value }}%</p>
+      {% endfor %}
+
+      <h4>Stress</h4>
+
+      {{ stress("violence", "Violence", ua_sheet.violence_hardened, ua_sheet.violence_failed) }}
+      {{ stress("unnatural", "Unnatural", ua_sheet.unnatural_hardened, ua_sheet.unnatural_failed) }}
+      {{ stress("helplessness", "Helplessness", ua_sheet.helplessness_hardened, ua_sheet.helplessness_failed) }}
+      {{ stress("isolation", "Isolation", ua_sheet.isolation_hardened, ua_sheet.isolation_failed) }}
+      {{ stress("self", "Self", ua_sheet.self_hardened, ua_sheet.self_failed) }}
+    </div>
+  {% endif %}
+{% endblock %}

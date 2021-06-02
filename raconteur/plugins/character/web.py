@@ -12,6 +12,7 @@ from raconteur.models.base import get_session
 from raconteur.plugins.character.models import Character, CHARACTER_NAME_MAX_LENGTH, CHARACTER_STATUS_MAX_LENGTH, \
     CHARACTER_APPEARANCE_MAX_LENGTH, Location, LOCATION_DESCRIPTION_MAX_LENGTH, LOCATION_CATEGORY_MAX_LENGTH, \
     LOCATION_NAME_MAX_LENGTH, Connection
+from raconteur.plugins.unknown_armies.models import UnknownArmiesSheet
 from raconteur.web.context import RequestContext
 from raconteur.web.templates import render_response
 from raconteur.web.utils import check_permissions, VALIDATION_ERRORS, add_validation_errors
@@ -27,6 +28,16 @@ async def characters_all(request: Request, current_game_id: int) -> Response:
         context = await RequestContext.build(session, request, current_game_id)
         context.extra["characters"] = Character.get_all_of_guild(session, current_game_id)
         return render_response("character/all.html", context)
+
+
+@character_plugin_router.get("/{current_game_id}/character/view/{character_id}")
+async def character_view(request: Request, current_game_id: int, character_id: int) -> Response:
+    with get_session() as session:
+        context = await RequestContext.build(session, request, current_game_id)
+        if await check_permissions(context):
+            context.extra["character"] = Character.get_by_id(session, current_game_id, character_id)
+            context.extra["ua_sheet"] = UnknownArmiesSheet.get_for_character(session, character_id)
+        return render_response("character/view.html", context)
 
 
 @character_plugin_router.get("/{current_game_id}/character/yours")

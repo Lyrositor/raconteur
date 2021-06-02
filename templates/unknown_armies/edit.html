@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+
+{% macro field(id, label, value, help, type="text", max_length=None, min=None, max=None, select_default=None, select_options=None, disabled=False) -%}
+  <div class="mb-3">
+    <label for="{{ id }}" class="form-label">{{ label }}</label>
+    {% if type == "textarea" %}
+      <textarea class="form-control" id="{{ id }}" name="{{ id }}" aria-describedby="{{ id }}-help" rows="3" {% if max_length %}maxlength="{{ max_length }}"{% endif %} {% if disabled %}disabled{% endif %}>{{ value if value }}</textarea>
+    {% elif type == "select" %}
+      <select class="form-select" id="{{ id }}" name="{{ id }}" {% if disabled %}disabled{% endif %}>
+        {% if select_default %}
+            <option value="" {% if not value %} selected{% endif %}>{{ select_default }}</option>
+        {% endif %}
+        {% for select_option_id, select_option_label in select_options %}
+          <option value="{{ select_option_id }}"{% if select_option_id == value %} selected{% endif %}>{{ select_option_label }}</option>
+        {% endfor %}
+      </select>
+    {% else %}
+      <input type="{{ type }}" class="form-control" id="{{ id }}" name="{{ id }}" aria-describedby="{{ id }}-help" {% if max_length %}maxlength="{{ max_length }}"{% endif %} value="{{ value }}" {% if min != None %}min="{{ min }}"{% endif %} {% if max != None %}max="{{ max }}"{% endif %} {% if disabled %}disabled{% endif %}>
+    {% endif %}
+    <div id="{{ id  }}-help" class="form-text">{{ help|safe }}</div>
+  </div>
+{%- endmacro %}
+
+{% macro ability(id, label, value, value_descriptor, help) -%}
+  <div class="mb-3">
+    <label for="{{ id }}" class="form-label">{{ label }}</label>
+    <div class="input-group">
+      <input type="number" class="form-control" id="{{ id }}" name="{{ id }}" aria-describedby="{{ id }}-help" value="{{ value }}" min="0" max="100">
+      <span class="input-group-text">a.k.a.</span>
+      <input type="text" class="form-control" id="{{ id }}_descriptor" name="{{ id }}_descriptor" aria-describedby="{{ id }}-help" value="{{ value_descriptor }}" placeholder="Descriptor">
+    </div>
+    <div id="{{ id  }}-help" class="form-text">{{ help|safe }}</div>
+  </div>
+{%- endmacro %}
+
+{% macro stress(id, label, hardened, failed, help) -%}
+  <div class="mb-3">
+    <label for="{{ id }}-hardened" class="form-label">{{ label }}</label>
+    <div class="input-group">
+      <span class="me-3">Hardened:</span>
+      {% for i in range(0, 11) %}
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="{{ id }}_hardened" id="{{ id }}-hardened-{{ i }}" value="{{ i }}" {% if hardened == i %}checked{% endif %}>
+          <label class="form-check-label" for="{{ id }}-hardened-{{ i }}">{{ i }}</label>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="input-group">
+      <span class="me-3">Failed:</span>
+      {% for i in range(0, 6) %}
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="{{ id }}_failed" id="{{ id }}-failed-{{ i }}" value="{{ i }}" {% if failed == i %}checked{% endif %}>
+          <label class="form-check-label" for="{{ id }}-failed-{{ i }}">{{ i }}</label>
+        </div>
+      {% endfor %}
+    </div>
+    <div id="{{ id  }}-help" class="form-text">{{ help|safe }}</div>
+  </div>
+{%- endmacro %}
+
+{% block title %}{% if sheet.is_editing %}Edit{% else %}Create{% endif %} Unknown Armies Sheet{% endblock %}
+
+{% block head_extra %}
+<style>
+.form-label {
+    font-weight: bold;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="errors">
+</div>
+<form method="post" id="sheet-form">
+  <p>You are a person who is turning away from the everyday to scratch deeper. You believe there are secrets that are worth learning. You are determined to discover them. You are not boring. You are an obsessed, passionate individual with a distinctive personality.</p>
+
+  {% if sheet.character_id %}
+    <div class="mb-3">
+      <label for="character_id" class="form-label">Character</label>
+      <p>
+        {% for character_id, character_name in characters %}{% if character_id == sheet.character_id %}{{ character_name }}{% endif %}{% endfor %}
+      </p>
+      <input type="hidden" name="character_id" value="{{ sheet.character_id }}" />
+      <div id="{{ id  }}-help" class="form-text">The character to whom this sheet is attached.</div>
+    </div>
+  {% else %}
+    {{ field("character_id", "Character", sheet.character_id, "The character to whom this sheet is attached.", type="select", select_default="Choose Character", select_options=characters, disabled=sheet.is_editing) }}
+  {% endif %}
+
+  {{ field("summary", "Summary", sheet.summary, "A quick summary of who your character is.", type="textarea") }}
+
+  {{ field("personality", "Personality", sheet.personality, "Who the hell do you think you are? Are you a lover or a fighter? Capricorn or Leo? Harry Potter or Darth Maul? You need a quick way of summing up how you present yourself, because that's as much attention as most people are going to pay you. You could use a role model, like a Good Cop or a Reluctant Warrior. You could use a Zodiac profile, not because it's really when you were born but because millions of people read the damn things in the newspaper already and know what they mean. Or you could use a pop-culture figure, like Lancelot, Gatsby, or Joey from Friends. Pick a role and play it. You've already figured out the real you—this is the you that other people can relate to.") }}
+
+  {{ field("obsession", "Obsession", sheet.obsession, "You don't enter the occult underground unless you're obsessed with something. This goes beyond a quirky interest or minor hobby. Your obsession is what you live for, what defines your existence, what gives your life meaning. Pick
+carefully. You want something useful, but original. It should also be something simple to express. \"Toughness\" is a good obsession. \"Getting really strong so I can beat people up\" is a needless elaboration.") }}
+
+  {{ field("school", "School", sheet.school if sheet.school, "<strong><em>Optional.</em></strong> Your character's school, if they are an adept.") }}
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Your Passions</h3>
+
+  <p>You don't go through life like a car on an assembly line. You're volatile, spontaneous, and committed. The events in your life can have a profound effect on you. There's something that really scares you, something that ticks you off, and something that inspires you to action.</p>
+  <p>These are the <strong>passions</strong> that rule your life. In a very real way, they're the foundation of all the "logical" and "rational" decisions you make as a human being. These are the hot buttons wired deep into your brain. You have three: a <strong>Fear</strong> stimulus, a <strong>Rage</strong> stimulus, and a <strong>Noble</strong> stimulus.</p>
+  <p>Your passions cannot contradict your obsession. You are a coherent person.</p>
+  <p>When you're in a situation that pushes one of your buttons, you go all spooky-intense. You can opt to either flip-flop or reroll a failed roll during that situation. You only get to do this once per session for each passion. If you're going to go buck wild, make sure it's worth it.</p>
+  <p>The GM can shut you down. If you unleash a passion for bogus reasons and she calls you on it, you don't get to cut loose. Yet.</p>
+
+  <div class="mb-3">
+    <label for="stimulus_fear" class="form-label">Fear Passion</label>
+    <div class="input-group">
+      <input type="text" class="form-control" id="stimulus_fear" name="stimulus_fear" aria-describedby="stimulus_fear-help" value="{{ sheet.stimulus_fear }}">
+      <span class="input-group-text">linked to</span>
+      <select class="form-select" id="stimulus_fear_madness" name="stimulus_fear_madness">
+        {% for value in madness %}
+          <option value="{{ value }}"{% if value == sheet.stimulus_fear_madness.value %} selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div id="stimulus_fear-help" class="form-text">
+      <p>What do you fear the most? Pointy things? Looking weak in front of people you respect? Whatever it is, it's the thing that makes you run like a neck-stumped chicken, the stink of panic erupting from your fevered skin.</p><p>If you activate your fear passion, you can use the flip-flop or reroll to get away. Run fast. Bust down the locked door. But you cannot use it to attack—the thing you fear most has the most power over you.</p>
+    </div>
+  </div>
+
+  {{ field("stimulus_rage", "Rage Passion", sheet.stimulus_rage, "<p>What makes you lash out in blind fury? Child abusers? People who have undeservedly been rewarded with the things you work so hard for but cannot obtain? Your rage passion is the thing you must destroy, surpass, or overcome, in whatever form or persona it manifests.</p><p>If you activate your rage passion, you can use the flip-flop or reroll to lash out. You might fire a gun, swing a fist, or turn over the tables of the money-changers in the courtyard of the temple. You cannot use it to do some sort of skilled, careful work, like picking a lock or hacking a computer belonging to your enemy. You must lash out immediately, in all your volatile, beautiful, uncontrollable rage.</p>") }}
+
+  {{ field("stimulus_noble", "Noble Passion", sheet.stimulus_noble, "<p>What inspires you to be the very best person you can be? Relieving the worldwide burden of poverty? Getting the money for your grandmother's operation? Your noble passion is the thing that takes you higher. To avoid your fear, you might leave your friends in the lurch. To destroy your rage, you might lie, torture, and murder. But to pursue your noble goal, you would make sacrifices, risk your own life, and endure terrible suffering for the common good.</p><p>If you activate your noble passion, you can use the flip-flop or reroll to take a selfless action that furthers your noble goal. You need to do it right away—this isn't a resource you can use to write a grant proposal. Bust the lock on the warehouse to feed the starving, drive fast to get the child to the hospital, persuade a soldier to let you into the refugee camp. This is a moment to define your highest self.</p>") }}
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Abilities</h3>
+
+  <p>You rate yourself with four <strong>stats</strong>: <strong>Body</strong>, <strong>Speed</strong>, <strong>Mind</strong>, and <strong>Soul</strong>. Each stat is a number from 1-100, the higher the better. From 30-70 is the typical range of adult human ability, so if you want a stat higher or lower than that range, you'd better have a good reason to feed the GM.</p>
+  <p>The starting number of points you have to divide among your stats depends on the kind of campaign you are creating a character for:</p>
+  <ul>
+    <li><strong>Street-level points:</strong> 220</li>
+    <li><strong>Global-level points:</strong> 240</li>
+    <li><strong>Cosmic-level points:</strong> 260</li>
+  </ul>
+  <p>But you're more than just numbers. Once you've chosen your stats, add a <strong>descriptor</strong> to each one. This is a word or short phrase that characterizes the nature of your stat. A Soul stat of 65 might be "shoulder to cry on," while a Soul of 35 might be a "cold fish." Mind descriptors could range from "irrational" to "quotes encyclopedias." Speed descriptors might be "catches flies" or "all thumbs." Body descriptors might be "totally ripped abs" or "flabby."</p>
+
+  {{ ability("body", "Body", sheet.body, sheet.body_descriptor, "This is a measure of how healthy, strong, and generally fit you are. A fitness buff has a really high Body score. A strung-out alcoholic has a really low score. Body determines how hard it is to kill you.") }}
+
+  {{ ability("speed", "Speed", sheet.speed, sheet.speed_descriptor, "This stat measures how physically quick and responsive you are. A race car driver probably has a high Speed stat, while a toll-booth attendant could have a low one. Wiggling through a tight space, trying not to slip on ice, or playing a computer game are all governed by your Speed.") }}
+
+  {{ ability("mind", "Mind", sheet.mind, sheet.mind_descriptor, "Steven Hawking has a really high Mind score. Most people who appear on <em>Maury Povich</em> don't. It governs how quickly you think, and how good you are at examining an idea from all sides. It's also how mentally tough you are. When things go south in the occult underground, people lose their marbles. With a high Mind stat, you've got a much bigger sack of marbles you can lose.") }}
+
+  {{ ability("soul", "Soul", sheet.soul, sheet.soul_descriptor, "Do you care about anything? If so, that's your Soul stat working. Emotions, nonverbal skills, social interaction, and magick are all governed by Soul. If you want to seduce people, sell cars, make a speech, or turn your will into reality, go with the Soul.") }}
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Skills</h3>
+
+  <p>With your stats in place, you pick <strong>skills</strong>: natural, learned, or unnatural abilities like Driving, Shooting Guns, Lying, or Seeing Auras. Each skill is assigned to a single stat. You use your stat levels as points to set your skills, and a given skill can't be higher than the stat that governs it. The more points you put into a stat, the more points you have available for the skills linked to that stat. It's a co-dependent relationship.</p>
+
+  {{ field("xp", "XP", sheet.xp, "When you take action, the GM can grant you experience points (XP). These are points you can spend to improve your stats and skills at the end of the session, or you can hang on to them to spend them later.") }}
+
+  <table class="table" id="skills">
+    <thead>
+      <tr>
+        <th scope="col">Name</th>
+        <th scope="col">Attribute</th>
+        <th scope="col">Value</th>
+        <th scope="col">Obsession Skill</th>
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for skill in sheet.skills %}
+        {% set skill_id = "skills[" ~ loop.index ~ "]" %}
+        <tr id="{{ skill_id }}" class="skill">
+          <th>
+            <input type="text" class="form-control" id="{{ skill_id }}.name" name="{{ skill_id }}.name" value="{{ skill.name }}">
+            <input type="hidden" id="{{ skill_id }}.id" name="{{ skill_id }}.id" value="{{ skill.id }}">
+          </th>
+          <td>
+            <select class="form-select" id="{{ skill_id }}.ability" name="{{ skill_id }}.ability">
+              {% for value in abilities %}
+                <option value="{{ value }}"{% if value == skill.ability.value %} selected{% endif %}>{{ value }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <input type="number" class="form-control" id="{{ skill_id }}.value" name="{{ skill_id }}.value" value="{{ skill.value }}" min="0" max="100">
+          </td>
+          <td>
+            <input type="radio" class="form-check-input" name="obsession_skill" id="obsession_skill" value="{{ loop.index }}" {% if skill.is_obsession %}checked{% endif %} />
+          </td>
+          <td>
+            <button type="button" name="{{ skill_id }}.action" value="delete-skill" class="btn btn-danger">Delete</button>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button type="button" name="action" value="add_skill" class="btn btn-success" id="add-skill">Add Skill</button>
+  <template id="skill-template">
+    <tr id="skills[%idx%]" class="skill">
+      <td>
+        <input type="text" class="form-control" id="skills[%idx%].name" name="skills[%idx%].name">
+      </td>
+      <td>
+        <select class="form-select" id="skills[%idx%].ability" name="skills[%idx%].ability">
+          {% for value in abilities %}
+            <option value="{{ value }}">{{ value }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <input type="number" class="form-control" id="skills[%idx%].value" name="skills[%idx%].value" value="0" min="0" max="100">
+      </td>
+      <td>
+        <input type="radio" class="form-check-input" name="obsession_skill" id="obsession_skill" value="%idx%"/>
+      </td>
+      <td>
+        <button type="button" name="skills[%idx%].action" value="delete-skill" class="btn btn-danger">Delete</button>
+      </td>
+    </tr>
+  </template>
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Stress</h3>
+
+  <p>There are five categories of mental stress: Violence, the Unnatural, Helplessness, Isolation, and Self. It's quite possible to be very casual about, say, Violence, while being a basket case when it comes to the Unnatural.</p>
+  <p>Each stress has two types of notches you can mark off. <strong>Hardened</strong> notches represent stress checks you've beaten, and they are numbered 1–10. <strong>Failed</strong> notches represent stress checks you've blown, and they are numbered 1–5.</p>
+
+  {{ stress("violence", "Violence", sheet.violence_hardened, sheet.violence_failed, "You have an instinctive revulsion towards actual violence. It’s stressful to hurt others, to watch others get hurt, and to <em>get</em> hurt. This stress also covers the fear of death that everyone suffers from in varying degrees.") }}
+
+  {{ stress("unnatural", "The Unnatural", sheet.unnatural_hardened, sheet.unnatural_failed, "It hurts your brain to think of things that don’t belong in your concept of the world. Contemplating infinity for too long, seeing <em>proof</em> that sometimes 2 + 2 = 5, and realizing that magick actually works are all unnatural stresses. It’s more subtle and unnerving than Violence. Everyone recognizes that violence exists, even those who are insulated from it. Unnatural stresses don’t just attack your idea of safety. They attack your idea of how the universe works.") }}
+
+  {{ stress("helplessness", "Helplessness", sheet.helplessness_hardened, sheet.helplessness_failed, "A sense of control is crucial for feelings of safety, even when it’s completely unmerited. When you have been challenged by helplessness, you can lose your ability to gauge how \"in control\" of a situation you are: you may feel powerless when the situation is not completely lost, or you may ignore real impediments from a misplaced sense of capability.") }}
+
+  {{ stress("isolation", "Isolation", sheet.isolation_hardened, sheet.isolation_failed, "Isolation is a subtle danger: it corrodes your sanity by
+denying you input. You rely on other human beings for feedback. Without the opinions of others, you do not know how to judge yourself. When you become resistant to isolation, you overlook social morés and unwritten rules because you’ve forgotten how to conform to the expectations of others. If you’ve suffered from isolation, you become very needy. These are not mutually exclusive: it’s possible to be very clingy and still be unable to pick up hints about when your behavior is unacceptable.") }}
+
+  {{ stress("self", "Self", sheet.self_hardened, sheet.self_failed, "This is the trickiest one. It’s your guilt and self-loathing, but it’s more than that. A major stress is when you find out you’re not the person you thought you were, by breaking a promise you honestly meant to keep, or by standing idly by when your values (or what you <em>thought</em> were your values) are desecrated. It’s your sense of alienation from self that provides, perhaps, the deepest terror. Where other meters measure how traumatized you are by things that happen to you, Self measures how traumatized you are by your own reactions to those things. To put it another way, the only thing you can ever really be 100% sure of is \"I think, therefore I am.\" The Self meter measures how uncertain you are about the \"I\" in that statement.") }}
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <div class="mb-3">
+    <button name="action" value="submit" class="btn btn-primary" id="submit">{% if sheet.is_editing %}Edit{% else %}Create{% endif %}</button>
+    <a class="btn btn-secondary" href="{{ url_for("ua_list", current_game_id=current_game.guild_id) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+  <script type="text/javascript">
+      const skillTemplate = $("#skill-template");
+      const skills = $("#skills");
+      const skillsBody = $("tbody", skills);
+      const addSkillButton = $("#add-skill");
+      const submitButton = $("#submit");
+      const errors = $("#errors");
+      let currentIndex = {{ sheet.skills|length }} + 1;
+
+      addSkillButton.click(function () {
+          const cloneHtml = skillTemplate.html().replaceAll("%idx%", `${currentIndex}`);
+          const newRow = $(cloneHtml);
+          $("button[value='delete-skill']", newRow).click(() => removeRow(newRow));
+          skillsBody.append(newRow);
+          currentIndex++;
+      });
+
+      submitButton.click(function (event) {
+          event.preventDefault();
+          const formData = new FormData(document.getElementById("sheet-form"));
+          const submitData = {
+              "is_editing": {% if sheet.is_editing %} true {% else %} false {% endif %}
+          };
+          const skills = {};
+          let obsessionSkillIdx = null;
+          for (const pair of formData.entries()) {
+              const key = pair[0];
+              const value = pair[1];
+              if (key.startsWith("skills")) {
+                  const matches = key.match(/skills\[(\d+)]\.(.+)/)
+                  if (matches != null) {
+                      const idx = matches[1];
+                      const subKey = matches[2];
+                      if (!skills.hasOwnProperty(idx)) {
+                          skills[idx] = {"is_obsession": false};
+                      }
+                      skills[idx][subKey] = value;
+                  }
+              } else if (key === "obsession_skill") {
+                  obsessionSkillIdx = value;
+              } else if (key === "character_id" && value === "") {
+                  submitData[key] = null;
+              }
+              else {
+                submitData[key] = value;
+              }
+          }
+          if (obsessionSkillIdx != null) {
+              skills[obsessionSkillIdx]["is_obsession"] = true;
+          }
+          submitData.skills = Object.values(skills);
+          $.post(
+              "{{ url_for('ua_sheet', current_game_id=current_game.guild_id) }}",
+              JSON.stringify(submitData),
+              function (response) {
+                  errors.empty()
+                  if (response.success) {
+                      if (response.redirect !== null) {
+                          window.location.href = response.redirect;
+                      } else {
+                          window.scrollTo(0, 0);
+                      }
+                  } else {
+                      for (const error of response.errors) {
+                          addError(error);
+                      }
+                      window.scrollTo(0, 0);
+                  }
+              },
+              "json",
+          ).fail(function () {
+              errors.empty()
+              addError("An unknown error occurred, please try again later.");
+              window.scrollTo(0, 0);
+          });
+      });
+
+      $(".skill").each(function () {
+          $("button[value='delete-skill']", this).click(() => removeRow(this));
+      })
+
+      function addError(text) {
+          const errorDiv = $("<div class=\"alert alert-danger\" role=\"alert\"></div>");
+          errorDiv.text(text);
+          errors.append(errorDiv);
+      }
+
+      function removeRow(row) {
+          row.remove();
+      }
+  </script>
+{% endblock %}
