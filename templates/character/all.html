@@ -15,7 +15,7 @@
           <div class="card-body">
             <h5 class="card-title">{{ character.name }}</h5>
             {% if character.status %}<p class="card-text">{{ character.status}}</p>{% endif %}
-            <a href="{{ url_for("character_view", current_game_id=current_game.guild_id, character_id=character.id) }}" class="btn btn-primary">Go somewhere</a>
+            <a href="{{ url_for("character_view", current_game_id=current_game.guild_id, character_id=character.id) }}" class="btn btn-primary">View Sheet</a>
           </div>
         </div>
       </div>

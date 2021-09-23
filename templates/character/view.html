@@ -26,12 +26,113 @@
 
 {% block title %}{{ character.name }}{% endblock %}
 
+{% block head_extra %}
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Architects+Daughter&display=swap" rel="stylesheet">
+
+  <style>
+  .ua-title {
+      color: black;
+      font-family: "Amatic SC", sans-serif;
+      font-size: 1.3rem;
+      font-weight: 700;
+      line-height: 1;
+      text-shadow: 0 0 1px black;
+  }
+
+  .ua-subtitle {
+      color: black;
+      font-family: "Amatic SC", sans-serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      line-height: 1;
+      text-align: center;
+      text-shadow: 0 0 1px black;
+  }
+
+  .ua-body {
+      font-family: "Architects Daughter", sans-serif;
+      font-size: 1.3em;
+      white-space: pre-line;
+  }
+
+  .ua-line-bottom {
+      border-top: solid 2px #e2e2e2;
+      opacity: 1;
+  }
+
+  .ua-field {
+      margin-bottom: 1.25rem;
+  }
+
+  .ua-field-inner {
+      height: 100%;
+      margin-top: .75rem;
+  }
+
+  .ua-checkbox {
+      background: white;
+      border: solid 1px black;
+      box-shadow: 2px 1px 0 black;
+      display: inline-block;
+      height: 0.8em;
+      margin: 2px 4px;
+      width: .8em;
+  }
+
+  .ua-checkbox-checked {
+      background: #a2a2a2;
+  }
+  </style>
+{% endblock %}
+
+{% macro ua_field(title, value, title_align="left", body_align="justify", height="100%", has_bottom_line=True) %}
+  <div class="ua-field" style="height: {{ height }}">
+    <div class="ua-field-inner">
+      {% if title %}<div class="ua-title mb-1" style="text-align: {{ title_align }}">{{ title }}</div>{% endif %}
+      {% if value %}<div class="ua-body" style="text-align: {{ body_align }}">{{ value }}</div>{% endif %}
+    </div>
+    {% if has_bottom_line %}<div class="ua-line-bottom"></div>{% endif %}
+  </div>
+{% endmacro %}
+
+{% macro stat(stat_name, stat_descriptor, stat_value) %}
+  <div class="float-end">{{ ua_field("", stat_value|string + "%", "center") }}</div>
+  {{ ua_field(stat_name, stat_descriptor, "center", "center", "auto", False) }}
+  {% for skill in ua_sheet.skills %}
+    {% if skill.ability.value == stat_name %}
+      {{ ua_field("", skill.name + " [" + skill.value|string + "%]" + (" [O]" if skill.is_obsession else ""), height="auto") }}
+    {% endif %}
+  {% endfor %}
+{% endmacro %}
+
+{% macro madness(name, hardened, failed) %}
+  {{ ua_field(name, "", "center", "center", "auto", False) }}
+  <div class="ua-subtitle">Hardened</div>
+  <div class="text-center">
+    {% for i in range(1, 6) %}
+      <div class="ua-checkbox {% if hardened >= i %}ua-checkbox-checked{% endif %}"></div>
+    {% endfor %}
+    <br />
+    {% for i in range(6, 11) %}
+      <div class="ua-checkbox {% if hardened >= i %}ua-checkbox-checked{% endif %}"></div>
+    {% endfor %}
+  </div>
+  <div class="ua-subtitle">Failed</div>
+  <div class="text-center">
+    {% for i in range(1, 6) %}
+      <div class="ua-checkbox {% if failed >= i %}ua-checkbox-checked{% endif %}"></div>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
 {% block content %}
+  {% if character.portrait %}
+    <img src="{{ character.portrait }}" class="rounded float-end m-2" style="max-width: 25%" alt="Portrait"/>
+  {% endif %}
   {% if character.status %}
     <p class="lead"><em>{{ character.status }}</em></p>
-  {% endif %}
-  {% if character.portrait %}
-    <img src="{{ character.portrait }}" class="rounded float-end" style="max-width: 25%" alt="Portrait"/>
   {% endif %}
   {% if character.appearance %}
     <blockquote class="blockquote">
@@ -39,37 +140,77 @@
     </blockquote>
   {% endif %}
   {% if ua_sheet %}
-    <div style="clear: both;">
+    <div class="container-fluid" style="clear: both;">
       <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
-      <img src="/static/images/unknown_armies.png" alt="Unknown Armies" width="250" style="display: block; margin: 1rem auto;" />
-      <p><strong>Summary:</strong> {{ ua_sheet.summary }}</p>
-      <p><strong>Personality:</strong> {{ ua_sheet.personality }}</p>
-      <p><strong>Obsession:</strong> {{ ua_sheet.obsession }}</p>
-      <p><strong>School:</strong> {% if ua_sheet.school %}{{ ua_sheet.school }}{% else %}<em>None</em>{% endif %}</p>
 
-      <h4>Passions</h4>
-      <p><strong>Fear Passion (linked to {{ ua_sheet.stimulus_fear_madness.value }}):</strong> {{ ua_sheet.stimulus_fear }}</p>
-      <p><strong>Rage Passion:</strong> {{ ua_sheet.stimulus_rage }}</p>
-      <p><strong>Noble Passion:</strong> {{ ua_sheet.stimulus_noble }}</p>
+      <div class="d-flex flex-row align-items-stretch pt-2 mb-3 justify-content-center">
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ ua_field("Personality", ua_sheet.personality, "right") }}
+        </div>
+        <div class="col px-3">
+          <img src="{{ url_for("static", path="images/unknown_armies.png") }}" alt="Unknown Armies" width="150" style="display: block; margin: 0 auto;" />
+          {{ ua_field("Your Name", character.name, "center", "center", "4em") }}
+          {{ ua_field("School or Archetype", ua_sheet.school if ua_sheet.school else "(None)", "center", "center", "4em") }}
+        </div>
+        <div class="col px-3" style="border-left: solid 2px #e2e2e2;">
+          {{ ua_field("Summary", ua_sheet.summary) }}
+        </div>
+      </div>
 
-      <h4>Abilities</h4>
-      <p><strong>Body:</strong> {{ ua_sheet.body }}% ({{ ua_sheet.body_descriptor }})</p>
-      <p><strong>Speed:</strong> {{ ua_sheet.speed }}% ({{ ua_sheet.speed_descriptor }})</p>
-      <p><strong>Mind:</strong> {{ ua_sheet.mind }}% ({{ ua_sheet.mind_descriptor }})</p>
-      <p><strong>Soul:</strong> {{ ua_sheet.soul }}% ({{ ua_sheet.soul_descriptor }})</p>
+      <div class="flex-row" style="margin-top: -.75rem;">
+        <div class="col">
+          {{ ua_field("Your Obsession", ua_sheet.obsession, "center", "center", "4em") }}
+        </div>
+      </div>
 
-      <h4>Skills</h4>
-      {% for skill in ua_sheet.skills %}
-        <p><strong>{{ skill.name }} [{{ skill.ability.value }}]{% if skill.is_obsession %} (Obsession){% endif %}:</strong> {{ skill.value }}%</p>
-      {% endfor %}
+      <div class="d-flex flex-row align-items-stretch mb-3 mt-4 justify-content-center">
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ ua_field("Rage Stimulus", ua_sheet.stimulus_rage, "right", "center") }}
+        </div>
+        <div class="col px-3">
+          {{ ua_field("Fear Stimulus", ua_sheet.stimulus_fear + " (linked to " + ua_sheet.stimulus_fear_madness.value + ")", "center", "center") }}
+        </div>
+        <div class="col px-3" style="border-left: solid 2px #e2e2e2;">
+          {{ ua_field("Noble Stimulus", ua_sheet.stimulus_noble, "left", "center") }}
+        </div>
+      </div>
 
-      <h4>Stress</h4>
+      <div class="d-flex flex-row align-items-stretch mb-3 mt-4 justify-content-center">
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ stat("Body", ua_sheet.body_descriptor, ua_sheet.body) }}
+        </div>
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ stat("Speed", ua_sheet.speed_descriptor, ua_sheet.speed) }}
+        </div>
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ stat("Mind", ua_sheet.mind_descriptor, ua_sheet.mind) }}
+        </div>
+        <div class="col px-3">
+          {{ stat("Soul", ua_sheet.soul_descriptor, ua_sheet.soul) }}
+        </div>
+      </div>
 
-      {{ stress("violence", "Violence", ua_sheet.violence_hardened, ua_sheet.violence_failed) }}
-      {{ stress("unnatural", "Unnatural", ua_sheet.unnatural_hardened, ua_sheet.unnatural_failed) }}
-      {{ stress("helplessness", "Helplessness", ua_sheet.helplessness_hardened, ua_sheet.helplessness_failed) }}
-      {{ stress("isolation", "Isolation", ua_sheet.isolation_hardened, ua_sheet.isolation_failed) }}
-      {{ stress("self", "Self", ua_sheet.self_hardened, ua_sheet.self_failed) }}
+      <hr class="ua-line-bottom" />
+
+      <div class="d-flex flex-row align-items-stretch mb-3 mt-4 justify-content-center">
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ madness("Violence", ua_sheet.violence_hardened, ua_sheet.violence_failed) }}
+        </div>
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ madness("The Unnatural", ua_sheet.unnatural_hardened, ua_sheet.unnatural_failed) }}
+        </div>
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ madness("Helplessness", ua_sheet.helplessness_hardened, ua_sheet.helplessness_failed) }}
+        </div>
+        <div class="col px-3" style="border-right: solid 2px #e2e2e2;">
+          {{ madness("Isolation", ua_sheet.isolation_hardened, ua_sheet.isolation_failed) }}
+        </div>
+        <div class="col px-3">
+          {{ madness("Self", ua_sheet.self_hardened, ua_sheet.self_failed) }}
+        </div>
+      </div>
     </div>
+
+    <hr class="ua-line-bottom" />
   {% endif %}
 {% endblock %}

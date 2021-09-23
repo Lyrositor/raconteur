@@ -250,7 +250,7 @@ def _populate_model(model: UnknownArmiesSheet, form: UnknownArmiesSheetForm, cur
     remaining_skill_models = []
     for skill in form.skills:
         for skill_model in model.skills:
-            if skill.id == skill_model.id:
+            if skill_model.id is not None and skill.id == skill_model.id:
                 remaining_skill_models.append(skill_model)
                 break
         else:
