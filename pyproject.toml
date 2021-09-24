@@ -23,7 +23,6 @@ aiocached = "^0.3"
 python-multipart = "^0.0.5"
 fuzzywuzzy = "^0.18.0"
 python-Levenshtein = "^0.12.2"
-python-Levenshtein = "^0.12.2"
 humanize = "^3.11.0"
 
 [tool.poetry.dev-dependencies]
