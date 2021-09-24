@@ -145,3 +145,4 @@ cython_debug/
 
 # Raconteur
 raconteur.db
+*.pkl

@@ -10,12 +10,6 @@ from raconteur.messages import send_message
 from raconteur.plugins.character.models import Location, Character, CharacterTraitType
 
 
-async def relay_message(message: Message, channels: Iterable[TextChannel], author: Optional[Character] = None) -> None:
-    intro = f"__**{author.name}**__\n" if author else ""
-    formatted_message = f"{intro}{message.content}"
-    await send_message_copies(channels, formatted_message, message.attachments)
-
-
 async def send_message_copies(
         channels: Iterable[TextChannel], text: str, attachments: Optional[list[Attachment]] = None
 ) -> list[Message]:

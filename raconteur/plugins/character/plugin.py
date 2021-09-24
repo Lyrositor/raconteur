@@ -1,20 +1,25 @@
 import asyncio
+import os.path
+import pickle
 import random
 import re
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional, Union, AsyncIterable, TYPE_CHECKING
+from typing import Optional, Union, AsyncIterable, TYPE_CHECKING, Iterable, Sequence
 
 from discord import Member, CategoryChannel, PermissionOverwrite, Guild, Message, TextChannel, Reaction
 from fastapi import APIRouter
+from humanize import naturaldelta
 from sqlalchemy.orm import Session
 
 from raconteur.commands import command, CommandCallContext
 from raconteur.exceptions import CommandException
+from raconteur.messages import send_message
 from raconteur.models.base import get_session
 from raconteur.models.game import Game
 from raconteur.plugin import Plugin
-from raconteur.plugins.character.communication import send_broadcast, send_status, relay_message, send_message_copies
+from raconteur.plugins.character.communication import send_broadcast, send_status, send_message_copies
 from raconteur.plugins.character.connections import toggle_lock, get_connection, toggle_hidden
 from raconteur.plugins.character.models import Character, Connection, Location, CHARACTER_STATUS_MAX_LENGTH, \
     CharacterTrait, CharacterTraitType
@@ -27,6 +32,19 @@ if TYPE_CHECKING:
 
 INTERCEPTION_CATEGORY = "GM"
 INTERCEPTION_CHANNEL = "interception"
+
+CACHED_MESSAGES_PATH = "plugin_characters_cached_messages.pkl"
+MAX_LAST_LOCATION_MESSAGES = 3
+MAX_AGE_LAST_LOCATION_MESSAGES = timedelta(days=7)
+
+
+@dataclass
+class CachedMessage:
+    text: str
+    timestamp: datetime
+    author_id: Optional[int] = None
+    location_id: Optional[int] = None
+    message_ids: list[tuple[int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -48,6 +66,23 @@ class CharacterPlugin(Plugin):
     def __init__(self, bot: "RaconteurBot"):
         super().__init__(bot)
         self.intercepted = {}
+
+        # Load up a cache of recent messages for various commands
+        self.cached_messages = {"locations": {}, "characters": {}}
+        if os.path.exists(CACHED_MESSAGES_PATH):
+            with open(CACHED_MESSAGES_PATH, "rb") as f:
+                self.cached_messages = pickle.load(f)
+
+    def save_cached_message(self, cached_message: CachedMessage):
+        if cached_message.author_id:
+            self.cached_messages["characters"][cached_message.author_id] = cached_message
+        if cached_message.location_id:
+            if cached_message.location_id not in self.cached_messages["locations"]:
+                self.cached_messages["locations"][cached_message.location_id] = deque(maxlen=MAX_LAST_LOCATION_MESSAGES)
+            self.cached_messages["locations"][cached_message.location_id].append(cached_message)
+        with open(CACHED_MESSAGES_PATH, "wb") as f:
+            pickle.dump(self.cached_messages, f)
+
 
     async def on_message(self, message: Message) -> None:
         with get_session() as session:
@@ -104,11 +139,12 @@ class CharacterPlugin(Plugin):
         if location.channel_id:
             channels.append(message.guild.get_channel(location.channel_id))
 
-        await relay_message(message, [c for c in channels if c], author=author)
+        await self.relay_message(message, [c for c in channels if c], author=author, location=location)
         del self.intercepted[intercepted.original_message_id]
 
     async def handle_location_message(self, session: Session, message: Message) -> None:
         channels = []
+        location = None
         if author := Character.get_for_channel(session, message.channel.id, message.author.id):
             # This is a player channel, broadcast to the other players and the GM
             if author.location:
@@ -140,12 +176,13 @@ class CharacterPlugin(Plugin):
                         message.delete(),
                     )
                     return
-                else:
-                    for character in author.location.characters:
-                        if character.channel_id:
-                            channels.append(message.guild.get_channel(character.channel_id))
-                    if author.location.channel_id:
-                        channels.append(message.guild.get_channel(author.location.channel_id))
+
+                for character in author.location.characters:
+                    if character.channel_id:
+                        channels.append(message.guild.get_channel(character.channel_id))
+                if author.location.channel_id:
+                    channels.append(message.guild.get_channel(author.location.channel_id))
+                location = author.location
         elif location := Location.get_for_channel(session, message.guild.id, message.channel.id):
             # This is a GM channel, broadcast to the players
             for character in location.characters:
@@ -153,8 +190,31 @@ class CharacterPlugin(Plugin):
                     channels.append(message.guild.get_channel(character.channel_id))
             channels.append(message.guild.get_channel(location.channel_id))
         if channels:
-            await relay_message(message, [c for c in channels if c], author=author)
+            await self.relay_message(message, [c for c in channels if c], author=author, location=location)
             await message.delete()
+
+    async def relay_message(
+        self,
+        message: Message,
+        channels: Iterable[TextChannel],
+        author: Optional[Character] = None,
+        location: Optional[Location] = None,
+    ) -> None:
+        intro = f"__**{author.name}**__\n" if author else ""
+        formatted_message = f"{intro}{message.content}"
+        message_ids = [
+            (message_copy.channel.id, message_copy.id)
+            for message_copy in await send_message_copies(channels, formatted_message, message.attachments)
+        ]
+        self.save_cached_message(
+            CachedMessage(
+                text=formatted_message,
+                timestamp=message.created_at,
+                author_id=author.id if author else None,
+                location_id=location.id if location else None,
+                message_ids=message_ids,
+            )
+        )
 
     @command(
         help_msg="Synchronizes the locations in the database with the channels on the server.",
@@ -243,6 +303,29 @@ class CharacterPlugin(Plugin):
                 character.status = status
                 session.commit()
             return None
+
+    @command(
+        help_msg="Deletes the most-recently sent message. Can only be used once before sending a new message.",
+        requires_player=True,
+    )
+    async def undo(self, ctx: CommandCallContext) -> str:
+        with get_session() as session:
+            character = _get_channel_character(ctx, session)
+            cached_message: Optional[CachedMessage] = self.cached_messages["characters"].get(character.id)
+            if cached_message:
+                fetch_messages = []
+                for channel_id, message_id in cached_message.message_ids:
+                    channel: TextChannel = ctx.guild.get_channel(channel_id)
+                    if channel:
+                        fetch_message = channel.fetch_message(message_id)
+                        if fetch_message:
+                            fetch_messages.append(fetch_message)
+                messages = [message for message in await asyncio.gather(*fetch_messages) if message]
+                await asyncio.gather(*[message.delete() for message in messages])
+                del self.cached_messages["characters"][character.id]
+                return "Your latest message has been removed."
+            else:
+                return "Failed to locate a message to delete. Have you already deleted your latest message?"
 
     @command(
         help_msg="Moves your character to another location. If location is not specified, lists possible destinations "
@@ -473,7 +556,8 @@ class CharacterPlugin(Plugin):
 
     @command(
         help_msg="Sets a character's flag to an arbitrary value. Flags do nothing on their own, but can be used to "
-                 "enable conditional descriptions of locations or store arbitrary data for other plugins to use."
+                 "enable conditional descriptions of locations or store arbitrary data for other plugins to use.",
+        requires_gm=True,
     )
     async def flag(self, name: str, value: str, player: Member, character_name: Optional[str] = None) -> str:
         name = name.strip() if name is not None else None
@@ -564,8 +648,7 @@ class CharacterPlugin(Plugin):
             else:
                 return f"**{character.name}**'s messages are no longer being intercepted."
 
-    @staticmethod
-    async def move_character(guild: Guild, character: Character, new_location: Location) -> None:
+    async def move_character(self, guild: Guild, character: Character, new_location: Location) -> None:
         character.last_movement = datetime.utcnow()
         if character.location:
             await send_broadcast(
@@ -579,6 +662,25 @@ class CharacterPlugin(Plugin):
         )
         character.location = new_location
         await send_status(guild, character)
+
+        # Update the IC channel topic
+        channel: TextChannel = guild.get_channel(character.channel_id) if character.channel_id else None
+        if channel:
+            await channel.edit(topic=f"**{new_location.name}**")
+
+        # Replay the last few messages in the channel from the past week
+        last_messages: Sequence[CachedMessage] = self.cached_messages["locations"].get(new_location.id, [])
+        now = datetime.now()
+        min_timestamp = now - MAX_AGE_LAST_LOCATION_MESSAGES
+        texts = [
+            cached_message.text for cached_message in last_messages if cached_message.timestamp > min_timestamp
+        ]
+        if texts and channel:
+            await send_message(
+                channel,
+                f"_*Recent activity (last message sent {naturaldelta(now - last_messages[-1].timestamp)} ago):*_\n\n"
+                + "\n\n".join(texts)
+            )
 
     @classmethod
     def get_web_router(cls) -> Optional[APIRouter]:
