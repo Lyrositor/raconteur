@@ -663,12 +663,8 @@ class CharacterPlugin(Plugin):
         character.location = new_location
         await send_status(guild, character)
 
-        # Update the IC channel topic
-        channel: TextChannel = guild.get_channel(character.channel_id) if character.channel_id else None
-        if channel:
-            await channel.edit(topic=f"**{new_location.name}**")
-
         # Replay the last few messages in the channel from the past week
+        channel: TextChannel = guild.get_channel(character.channel_id) if character.channel_id else None
         last_messages: Sequence[CachedMessage] = self.cached_messages["locations"].get(new_location.id, [])
         now = datetime.now()
         min_timestamp = now - MAX_AGE_LAST_LOCATION_MESSAGES
