@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Optional, Any
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -39,9 +41,15 @@ class RequestContext:
         games = [game for game, in session.execute(select(Game).order_by(Game.name))]
         current_game = next((game for game in games if game.guild_id == current_game_id), None)
         current_user = get_authenticated_user(request)
+        all_permissions = await asyncio.gather(*[get_permissions(game, current_user) for game in games])
+        accessible_games = [game for i, game in enumerate(games) if all_permissions[i].is_member]
+
+        if current_game and current_game not in accessible_games:
+            raise HTTPException(403, "You do not have access to this game.")
+
         return cls(
             request=request,
-            games=games,
+            games=accessible_games,
             current_game=current_game,
             current_user=current_user,
             permissions=await get_permissions(current_game, current_user),

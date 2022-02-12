@@ -2,6 +2,7 @@ from typing import Any, Optional
 
 from aiocached import cached
 from authlib.integrations.starlette_client import OAuth, StarletteRemoteApp
+from discord import Forbidden
 from fastapi import APIRouter
 from loginpass import Discord
 from loginpass.discord import normalize_userinfo
@@ -23,9 +24,10 @@ class AuthenticatedUser(BaseModel):
 
 
 class Permissions(BaseModel):
-    is_gm: bool
-    is_player: bool
-    is_spectator: bool
+    is_member: bool = False
+    is_gm: bool = False
+    is_player: bool = False
+    is_spectator: bool = False
 
 
 def get_authenticated_user(request: Request) -> Optional[AuthenticatedUser]:
@@ -36,16 +38,14 @@ def get_authenticated_user(request: Request) -> Optional[AuthenticatedUser]:
 async def get_permissions(
         game: Optional[Game], user: Optional[AuthenticatedUser]
 ) -> Permissions:
-    permissions = Permissions(
-        is_gm=False,
-        is_player=False,
-        is_spectator=False,
-    )
+    permissions = Permissions()
     if game is not None and user is not None:
         role_ids = await _get_member_roles(game.guild_id, user.id)
-        permissions.is_gm = game.gm_role_id in role_ids
-        permissions.is_player = game.player_role_id in role_ids
-        permissions.is_spectator = game.spectator_role_id in role_ids
+        permissions.is_member = role_ids is not None
+        if role_ids:
+            permissions.is_gm = game.gm_role_id in role_ids
+            permissions.is_player = game.player_role_id in role_ids
+            permissions.is_spectator = game.spectator_role_id in role_ids
     return permissions
 
 
@@ -81,7 +81,10 @@ def get_auth_router() -> APIRouter:
 
 
 @cached(ttl=60)
-async def _get_member_roles(guild_id: int, user_id: int) -> list[int]:
+async def _get_member_roles(guild_id: int, user_id: int) -> Optional[list[int]]:
     client = await get_client()
-    user = await client.http.get_member(guild_id, user_id)
+    try:
+        user = await client.http.get_member(guild_id, user_id)
+    except Forbidden:
+        return None
     return [int(role_id) for role_id in user["roles"]]

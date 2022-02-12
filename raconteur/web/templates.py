@@ -39,7 +39,7 @@ def render_response(name: str, context: RequestContext, **kwargs: Any) -> Templa
     # Build the menu based on which plugins are active for this game
     from raconteur.plugins import PLUGINS
     menu: dict[str, Union[str, dict[str, str]]] = {}
-    if context.current_game:
+    if context.current_game and context.permissions.is_member:
         for plugin in PLUGINS:
             for label, route_or_sub_menu in plugin.get_web_menu_for_game(context.current_game).items():
                 if isinstance(route_or_sub_menu, dict):
