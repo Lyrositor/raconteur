@@ -2,7 +2,7 @@ from typing import Any, Optional
 
 from aiocached import cached
 from authlib.integrations.starlette_client import OAuth, StarletteRemoteApp
-from discord import Forbidden
+from discord import Forbidden, NotFound
 from fastapi import APIRouter
 from loginpass import Discord
 from loginpass.discord import normalize_userinfo
@@ -85,6 +85,6 @@ async def _get_member_roles(guild_id: int, user_id: int) -> Optional[list[int]]:
     client = await get_client()
     try:
         user = await client.http.get_member(guild_id, user_id)
-    except Forbidden:
+    except (Forbidden, NotFound):
         return None
     return [int(role_id) for role_id in user["roles"]]
