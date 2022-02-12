@@ -1,11 +1,9 @@
-import asyncio
 import inspect
 import re
 from dataclasses import dataclass
 from typing import Optional, Union, Type, Callable, Any, AsyncIterable, Coroutine
 
 from discord import Message, Guild, Role, TextChannel, Member
-from discord.abc import GuildChannel
 from sqlalchemy.orm import Session
 
 from raconteur.exceptions import CommandException, CommandParamValueException, \

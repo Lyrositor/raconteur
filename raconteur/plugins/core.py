@@ -1,5 +1,5 @@
 import asyncio
-from typing import AsyncIterable
+from typing import AsyncIterable, Union
 
 from discord import Colour, Role
 
@@ -88,3 +88,32 @@ class CorePlugin(Plugin):
                         session.commit()
                         return f"Plugin **{name}** has been disabled"
         raise CommandException(f"Unknown plugin **{name}**")
+
+    @command(help_msg="Sets a plugin setting.", requires_gm=True)
+    async def setting(self, ctx: CommandCallContext, plugin: str, name: str, value: str) -> str:
+        with get_session() as session:
+            parsed_value = convert_setting_value(value)
+            self.set_setting(ctx.guild, session, name, parsed_value, plugin)
+            return f"Successfully set `{plugin}.{name}` to `{parsed_value}`"
+
+
+def convert_setting_value(value: str) -> Union[None, bool, int, float, str]:
+    cleaned_value = value.strip().lower()
+    if cleaned_value == "true":
+        return True
+    elif cleaned_value == "false":
+        return False
+    elif cleaned_value == "none":
+        return None
+
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+
+    return value
+

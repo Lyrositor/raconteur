@@ -4,15 +4,15 @@ import inspect
 import logging
 from dataclasses import dataclass
 from functools import partial
-from typing import Optional, ClassVar, TYPE_CHECKING, Union
+from typing import Optional, ClassVar, TYPE_CHECKING, Union, Any
 
-from discord import Message, Member, TextChannel, Reaction
+from discord import Message, Member, TextChannel, Reaction, Guild
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import Column, ForeignKey
-from sqlalchemy.orm import declared_attr, declarative_mixin, relationship, RelationshipProperty
+from sqlalchemy.orm import declared_attr, declarative_mixin, relationship, RelationshipProperty, Session
 
-from raconteur.commands import Command, parse_message_as_command_call, COMMAND_PREFIX
+from raconteur.commands import Command, parse_message_as_command_call, COMMAND_PREFIX, CommandCallContext
 from raconteur.exceptions import CommandException
 from raconteur.messages import send_message
 from raconteur.models.base import get_session
@@ -97,6 +97,20 @@ class Plugin:
     async def on_reaction_add(self, reaction: Reaction, user: Member) -> None:
         pass
 
+    def get_setting(self, session: Session, guild: Guild, name: str) -> Optional[Any]:
+        return get_setting(self.__class__.__name__, session, guild, name)
+
+    def set_setting(self, guild: Guild, session: Session, name: str, value: Any, plugin: Optional[str] = None) -> None:
+        plugin = plugin or self.__class__.__name__
+        game = session.get(Game, guild.id)
+        if not game:
+            raise CommandException("Game is not initialized")
+        game_plugin = game.get_plugin(plugin)
+        if not game_plugin:
+            raise CommandException(f"Plugin {plugin} is not enabled")
+        game_plugin.settings[name] = value
+        session.commit()
+
     def get_commands(self) -> dict[str, Command]:
         commands: dict[str, Command] = {}
         for item_name in dir(self):
@@ -127,6 +141,17 @@ class Plugin:
     @classmethod
     def get_web_menu(cls) -> dict[str, Union[str, dict[str, str]]]:
         return {}
+
+
+def get_setting(plugin: str, session: Session, guild: Guild, name: str) -> Optional[Any]:
+    plugin = plugin
+    game = session.get(Game, guild.id)
+    if not game:
+        raise CommandException("Game is not initialized")
+    game_plugin = game.get_plugin(plugin)
+    if not game_plugin:
+        raise CommandException(f"Plugin {plugin} is not enabled")
+    return game_plugin.settings.get(name)
 
 
 def has_permission_for_command(command: Command, message: Message) -> bool:

@@ -30,14 +30,14 @@ async def send_message_copies(
     return copied_messages  # type: ignore
 
 
-async def send_broadcast(guild: Guild, location: Location, text: str) -> None:
+async def send_broadcast(guild: Guild, location: Location, text: str) -> list[Message]:
     channels = []
     for character in location.characters:
         if channel := guild.get_channel(character.channel_id):
             channels.append(channel)
     if channel := guild.get_channel(location.channel_id):
         channels.append(channel)
-    await asyncio.gather(*[send_message(channel, text) for channel in channels])
+    return list(await asyncio.gather(*[send_message(channel, text) for channel in channels]))
 
 
 async def send_status(guild: Guild, character: Character) -> None:

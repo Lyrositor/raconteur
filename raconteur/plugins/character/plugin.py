@@ -18,7 +18,7 @@ from raconteur.exceptions import CommandException
 from raconteur.messages import send_message
 from raconteur.models.base import get_session
 from raconteur.models.game import Game
-from raconteur.plugin import Plugin
+from raconteur.plugin import Plugin, get_setting
 from raconteur.plugins.character.communication import send_broadcast, send_status, send_message_copies
 from raconteur.plugins.character.connections import toggle_lock, get_connection, toggle_hidden
 from raconteur.plugins.character.models import Character, Connection, Location, CHARACTER_STATUS_MAX_LENGTH, \
@@ -83,9 +83,15 @@ class CharacterPlugin(Plugin):
         with open(CACHED_MESSAGES_PATH, "wb") as f:
             pickle.dump(self.cached_messages, f)
 
+    def use_channel_navigation(self, session: Session, guild: Guild) -> bool:
+        return bool(self.get_setting(session, guild, "use_channel_navigation"))
 
     async def on_message(self, message: Message) -> None:
         with get_session() as session:
+            if self.use_channel_navigation(session, message.guild):
+                # No need to relay messages if everything is happening inside the location channels
+                return
+
             # Check if this is a reply to an intercepted message
             if message.reference and (intercepted := self.intercepted.get(message.reference.message_id)):
                 await self.handle_interception(session, message, intercepted)
@@ -93,11 +99,15 @@ class CharacterPlugin(Plugin):
                 interception_message: Message = await interception_channel.fetch_message(message.reference.message_id)
                 await interception_message.clear_reactions()
             else:
-                # Otherwise try to process it as a location message
+                # Otherwise, try to process it as a location message
                 await self.handle_location_message(session, message)
 
     async def on_typing(self, channel: TextChannel, member: Member) -> None:
         with get_session() as session:
+            if self.use_channel_navigation(session, channel.guild):
+                # No need to relay typing notifications if everything is happening inside the location channels
+                return
+
             if author := Character.get_for_channel(session, channel.id, member.id):
                 typings = []
                 for character in author.location.characters:
@@ -112,8 +122,12 @@ class CharacterPlugin(Plugin):
                 await asyncio.gather(*typings)
 
     async def on_reaction_add(self, reaction: Reaction, user: Member) -> None:
-        if reaction.message.id in self.intercepted and (intercepted := self.intercepted.get(reaction.message.id)):
-            with get_session() as session:
+        with get_session() as session:
+            if self.use_channel_navigation(session, reaction.message.guild):
+                # No need to relay reactions if everything is happening inside the location channels
+                return
+
+            if reaction.message.id in self.intercepted and (intercepted := self.intercepted.get(reaction.message.id)):
                 author = Character.get_by_id(session, reaction.message.guild.id, intercepted.character_id)
                 if not author:
                     return
@@ -293,7 +307,7 @@ class CharacterPlugin(Plugin):
     )
     async def status(self, ctx: CommandCallContext, status: Optional[str] = None) -> Optional[str]:
         with get_session() as session:
-            character = _get_channel_character(ctx, session)
+            character = get_channel_character(ctx, session)
             if status is None:
                 await send_status(ctx.guild, character)
             else:
@@ -334,7 +348,7 @@ class CharacterPlugin(Plugin):
     )
     async def move(self, ctx: CommandCallContext, location: Optional[str] = None) -> Optional[str]:
         with get_session() as session:
-            character = _get_channel_character(ctx, session)
+            character = get_channel_character(ctx, session)
             if not character.location:
                 raise CommandException(f"Cannot move: your character isn't in any location yet.")
             if not location:
@@ -379,7 +393,7 @@ class CharacterPlugin(Plugin):
                     time_remaining = f"{seconds} second" + ("s" if seconds != 1 else "")
                 raise CommandException(f"Cannot move to `{location}`: {time_remaining} left before you can move there.")
 
-            await self.move_character(ctx.guild, character, new_location)
+            await self.move_character(session, ctx.guild, character, new_location)
             session.commit()
             return None
 
@@ -403,7 +417,7 @@ class CharacterPlugin(Plugin):
                     f"Cannot force move **{character.name}** to `{location}`: character is already in that location."
                 )
 
-            await self.move_character(ctx.guild, character, new_location)
+            await self.move_character(session, ctx.guild, character, new_location)
             session.commit()
             return f"Force moved {character.name} to `{location}`"
 
@@ -511,7 +525,7 @@ class CharacterPlugin(Plugin):
     )
     async def inventory(self, ctx: CommandCallContext) -> Optional[str]:
         with get_session() as session:
-            character = _get_channel_character(ctx, session)
+            character = get_channel_character(ctx, session)
             inventory_items = "\n".join(f"- **{item.name}**: {item.value}" for item in character.get_inventory())
             if inventory_items:
                 return f"**{character.name}** has the following in their inventory:\n{inventory_items}"
@@ -525,7 +539,7 @@ class CharacterPlugin(Plugin):
         name = name.strip()
         description = description.strip()
         with get_session() as session:
-            character = _get_channel_character(ctx, session)
+            character = get_channel_character(ctx, session)
             if not character.location:
                 raise CommandException(f"Cannot pickup **{name}**: your character isn't in any location yet.")
             if any(item.name == name for item in character.get_inventory()):
@@ -544,7 +558,7 @@ class CharacterPlugin(Plugin):
     async def drop(self, ctx: CommandCallContext, name: str) -> None:
         name = name.strip()
         with get_session() as session:
-            character = _get_channel_character(ctx, session)
+            character = get_channel_character(ctx, session)
             if not character.location:
                 raise CommandException(f"Cannot drop **{name}**: your character isn't in any location yet.")
             item = next((item for item in character.get_inventory() if item.name == name), None)
@@ -585,14 +599,6 @@ class CharacterPlugin(Plugin):
 
     # TODO Add radio commands
 
-    @command(help_msg="Rolls a d100.")
-    async def d100(self, ctx: CommandCallContext) -> Optional[str]:
-        return await self.roll(ctx, "1d100")
-
-    @command(help_msg="Rolls a d10.")
-    async def d10(self, ctx: CommandCallContext) -> Optional[str]:
-        return await self.roll(ctx, "1d10")
-
     @command(help_msg="Rolls a set of standard polyhedral dice (d4, d6, d8, d10, d12, d20, d100). Example: 1d6 3d8")
     async def roll(self, ctx: CommandCallContext, dice: str) -> Optional[str]:
         elements = re.split(r"\s+", dice.strip())
@@ -616,21 +622,28 @@ class CharacterPlugin(Plugin):
             total = sum(roll for roll, num_sides in rolls)
             roll_message = f"rolled **{total}** = {roll_results}"
         with get_session() as session:
-            if location := Location.get_for_channel(session, ctx.guild.id, ctx.channel.id):
-                await send_broadcast(ctx.guild, location, f"**The GM** " + roll_message)
-                return None
-            elif (
-                    (character := Character.get_for_channel(session, ctx.channel.id, ctx.member.id))
-                    and character.location
-            ):
-                await send_broadcast(ctx.guild, character.location, f"**{character.name}** " + roll_message)
-                return None
+            if self.use_channel_navigation(session, ctx.guild):
+                if character := get_channel_character(ctx, session):
+                    await send_broadcast(ctx.guild, character.location, f"**{character.name}** " + roll_message)
+                    return None
             else:
-                return f"**{ctx.message.author.display_name}** " + roll_message
+                if location := Location.get_for_channel(session, ctx.guild.id, ctx.channel.id):
+                    await send_broadcast(ctx.guild, location, f"**The GM** " + roll_message)
+                    return None
+                elif (
+                        (character := Character.get_for_channel(session, ctx.channel.id, ctx.member.id))
+                        and character.location
+                ):
+                    await send_broadcast(ctx.guild, character.location, f"**{character.name}** " + roll_message)
+                    return None
+            return f"**{ctx.message.author.display_name}** " + roll_message
 
     @command(help_msg="Toggles a character's messages for interception by the GM.", requires_gm=True)
     async def intercept(self, ctx: CommandCallContext, player: Member, name: Optional[str] = None) -> str:
         with get_session() as session:
+            if not self.use_channel_navigation(session, ctx.guild):
+                raise CommandException("Cannot intercept messages while in channel navigation mode")
+
             character = _get_character_implicit(session, player, name)
             character.intercept = not character.intercept
             session.commit()
@@ -648,8 +661,19 @@ class CharacterPlugin(Plugin):
             else:
                 return f"**{character.name}**'s messages are no longer being intercepted."
 
-    async def move_character(self, guild: Guild, character: Character, new_location: Location) -> None:
+    async def move_character(self, session: Session, guild: Guild, character: Character, new_location: Location) -> None:
+        use_channel_navigation = self.use_channel_navigation(session, guild)
         character.last_movement = datetime.utcnow()
+
+        if use_channel_navigation and (member := guild.get_member(character.member_id)):
+            if (
+                    character.location and character.location.channel_id
+                    and (old_channel := guild.get_channel(character.location.channel_id))
+            ):
+                await old_channel.set_permissions(member, overwrite=None)
+            if new_location.channel_id and (new_channel := guild.get_channel(new_location.channel_id)):
+                await new_channel.set_permissions(member, read_messages=True)
+
         if character.location:
             await send_broadcast(
                 guild, character.location, f"**{character.name}** moves to `{new_location.name}`"
@@ -695,8 +719,23 @@ class CharacterPlugin(Plugin):
         }
 
 
-def _get_channel_character(ctx: CommandCallContext, session: Session) -> Character:
-    character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
+def get_channel_character(ctx: CommandCallContext, session: Session) -> Character:
+    use_channel_navigation = bool(
+        get_setting(CharacterPlugin.__name__, session, ctx.guild, "use_channel_navigation")
+    )
+    if use_channel_navigation:
+        # Channel navigation assumes there is only one character per player per location
+        location = Location.get_for_channel(session, ctx.guild.id, ctx.channel.id)
+        character = next(
+            (
+                c
+                for c in Character.get_all_of_member(session, ctx.guild.id, ctx.member.id)
+                if c.location_id == location.id
+            ),
+            None
+        )
+    else:
+        character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
     if not character:
         raise CommandException(f"Cannot process command: none of your characters are associated with this channel.")
     return character

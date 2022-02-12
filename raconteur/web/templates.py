@@ -1,6 +1,9 @@
+from html import escape
 from typing import Any, Union
 
 # noinspection PyProtectedMember
+from jinja2 import contextfilter
+from markupsafe import Markup
 from starlette.templating import Jinja2Templates, _TemplateResponse
 
 from raconteur.web.context import RequestContext
@@ -8,6 +11,28 @@ from raconteur.web.context import RequestContext
 TemplateResponse = _TemplateResponse
 
 templates = Jinja2Templates(directory="templates")
+
+
+EMOJIS = {
+    "d4": "images/umbreal/d4.png",
+    "d6": "images/umbreal/d6.png",
+    "d8": "images/umbreal/d8.png",
+    "d10": "images/umbreal/d10.png",
+    "d12": "images/umbreal/d12.png",
+    "PP": "images/umbreal/PP.png",
+}
+
+
+@contextfilter
+def emojis(context: dict[str, Any], value: str) -> Markup:
+    value = escape(value)
+    for name, image in EMOJIS.items():
+        path = context["url_for"](context, "static", path=image)
+        value = value.replace(f":{name}:", f'<img src="{path}" class="emoji" width=22 height=22 />')
+    return Markup(value)
+
+
+templates.env.filters["emojis"] = emojis
 
 
 def render_response(name: str, context: RequestContext, **kwargs: Any) -> TemplateResponse:

@@ -29,7 +29,7 @@
 {% block head_extra %}
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link rel="preconnect" href="https://fonts.gstatic.com">
-  <link href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Architects+Daughter&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Architects+Daughter&family=Lora&display=swap" rel="stylesheet">
 
   <style>
   .ua-title {
@@ -84,6 +84,117 @@
   .ua-checkbox-checked {
       background: #a2a2a2;
   }
+
+  .umbreal-box {
+      margin-bottom: 2rem;
+      padding-left: 2.4rem;
+      position: relative;
+  }
+
+  .umbreal-heading {
+      bottom: 0;
+      font-family: 'Lora', serif;
+      font-size: 1.4rem;
+      font-weight: bold;
+      right: 100%;
+      letter-spacing: 2px;
+      line-height: 1;
+      margin: 0;
+      position: absolute;
+      top: 0;
+      text-transform: uppercase;
+      transform-origin: right top;
+      transform: rotate(-90deg);
+  }
+
+  .umbreal-trait-big {
+      position: relative;
+  }
+
+  .umbreal-trait-big-title {
+      margin: 1em 0;
+      overflow: auto
+  }
+
+  .umbreal-trait-big-title:before {
+      background-size: 48px 48px;
+      content: "";
+      left: 0;
+      height: 48px;
+      position: absolute;
+      top: 0;
+      width: 48px;
+  }
+
+  .umbreal-trait-big-title-text {
+      background-color: #2d2727;
+      color: #ffffff;
+      font-size: 20px;
+      font-weight: bold;
+      margin-left: 24px;
+      margin-top: 8px;
+      padding-left: 28px;
+      padding-right: 12px;
+  }
+
+  .umbreal-lawbreak-title {
+      background-color: #2d2727;
+      color: #ffffff;
+      font-size: 20px;
+      font-weight: bold;
+      margin: 1em 0 1em 8px;
+      padding-left: 16px;
+      padding-right: 12px;
+  }
+
+  .umbreal-lawbreak-body, .umbreal-trait-big-body {
+      margin-left: 12px;
+  }
+
+  .umbreal-trait {
+      display: inline-block;
+      font-weight: bold;
+      padding-left: 26px;
+      position: relative;
+  }
+
+  .umbreal-trait:before {
+      background-size: 24px 24px;
+      content: "";
+      left: 0;
+      height: 24px;
+      position: absolute;
+      top: 0;
+      width: 24px;
+  }
+
+  .umbreal-d4:before {
+      background-image: url("{{ url_for("static", path="images/umbreal/d4.png") }}");
+  }
+
+  .umbreal-d6:before {
+      background-image: url("{{ url_for("static", path="images/umbreal/d6.png") }}");
+  }
+
+  .umbreal-d8:before {
+      background-image: url("{{ url_for("static", path="images/umbreal/d8.png") }}");
+  }
+
+  .umbreal-d10:before {
+      background-image: url("{{ url_for("static", path="images/umbreal/d10.png") }}");
+  }
+
+  .umbreal-d12:before {
+      background-image: url("{{ url_for("static", path="images/umbreal/d12.png") }}");
+  }
+
+  .umbreal-line {
+      background-color: black;
+      clear: both;
+      height: 2px !important;
+      margin: 2rem 8rem;
+      opacity: 1;
+  }
   </style>
 {% endblock %}
 
@@ -124,6 +235,43 @@
     {% for i in range(1, 6) %}
       <div class="ua-checkbox {% if failed >= i %}ua-checkbox-checked{% endif %}"></div>
     {% endfor %}
+  </div>
+{% endmacro %}
+
+
+{% macro umbreal_dice(value) -%}
+  {% if value == 1 %}
+    umbreal-d4
+  {% elif value == 2 %}
+    umbreal-d6
+  {% elif value == 3 %}
+    umbreal-d8
+  {% elif value == 4 %}
+    umbreal-d10
+  {% elif value == 5 %}
+    umbreal-d12
+  {% endif %}
+{%- endmacro %}
+
+{% macro umbreal_trait(name, description, rating) %}
+  <div>
+    <div class="umbreal-trait {{ umbreal_dice(rating) }}" data-bs-toggle="tooltip" data-bs-placement="right" title="{{ description }}">{{ name }}</div>
+  </div>
+{% endmacro %}
+
+{% macro big_umbreal_trait(trait) %}
+  <div class="umbreal-trait-big">
+    <div class="umbreal-trait-big-title {{ umbreal_dice(trait.value) }}">
+      <div class="umbreal-trait-big-title-text">{{ trait.name }}</div>
+    </div>
+    <div class="umbreal-trait-big-body">{{ trait.description | emojis }}</div>
+  </div>
+{% endmacro %}
+
+{% macro umbreal_lawbreak(lawbreak) %}
+  <div class="umbreal-lawbreak">
+    <div class="umbreal-lawbreak-title">{{ lawbreak.name }}</div>
+    <div class="umbreal-lawbreak-body">{{ lawbreak.description | emojis }}</div>
   </div>
 {% endmacro %}
 
@@ -213,4 +361,81 @@
 
     <hr class="ua-line-bottom" />
   {% endif %}
+
+  {% if umbreal_sheet %}
+    <div class="container-fluid" style="clear: both;">
+      <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+      <div class="container">
+        <div class="row">
+          <div class="column col-3">
+            <div class="umbreal-box clearfix">
+              <h2 class="umbreal-heading">Attributes</h2>
+              {% for attribute in umbreal_sheet.attributes %}
+                {{ umbreal_trait(attribute.name, attribute.description, attribute.value) }}
+              {% endfor %}
+            </div>
+            <div class="umbreal-box clearfix">
+              <h2 class="umbreal-heading">Skills</h2>
+              {% for skill in umbreal_sheet.skills %}
+                {{ umbreal_trait(skill.name, skill.description, skill.value) }}
+              {% endfor %}
+            </div>
+            <div class="umbreal-box clearfix">
+              <h2 class="umbreal-heading">Powers</h2>
+              {% for power in umbreal_sheet.powers %}
+                {{ umbreal_trait(power.name, power.description, power.value) }}
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="column col-9">
+            <div class="umbreal-box">
+              <h2 class="umbreal-heading">Distinctions</h2>
+              {% for distinction in umbreal_sheet.distinctions %}
+                {{ big_umbreal_trait(distinction) }}
+              {% endfor %}
+            </div>
+
+            <hr class="umbreal-line" />
+
+            <div class="umbreal-box">
+              <h2 class="umbreal-heading">Assets</h2>
+              {% for asset in umbreal_sheet.assets %}
+                {{ big_umbreal_trait(asset) }}
+              {% endfor %}
+            </div>
+
+            <hr class="umbreal-line" />
+
+            <div class="umbreal-box">
+              <h2 class="umbreal-heading">Lawbreaks</h2>
+              {% for lawbreak in umbreal_sheet.lawbreaks %}
+                {{ umbreal_lawbreak(lawbreak) }}
+              {% endfor %}
+            </div>
+
+            <hr class="umbreal-line" />
+
+            <div class="umbreal-box">
+              <h2 class="umbreal-heading">Milestone</h2>
+              <p><strong>1 XP:</strong> {{ umbreal_sheet.xp_1_milestone }}</p>
+              <p><strong>3 XP:</strong> {{ umbreal_sheet.xp_3_milestone }}</p>
+              <p><strong>10 XP:</strong> {{ umbreal_sheet.xp_10_milestone }}</p>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  <script type="text/javascript">
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+      return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+  </script>
 {% endblock %}

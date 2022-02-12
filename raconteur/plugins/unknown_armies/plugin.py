@@ -11,6 +11,7 @@ from raconteur.models.base import get_session
 from raconteur.plugin import Plugin
 from raconteur.plugins.character.communication import send_broadcast
 from raconteur.plugins.character.models import Character
+from raconteur.plugins.character.plugin import get_channel_character
 from raconteur.plugins.unknown_armies.models import UnknownArmiesSheet, UnknownArmiesSkill, UnknownArmiesAbility
 from raconteur.plugins.unknown_armies.web import unknown_armies_router, ua_list
 from raconteur.utils import fuzzy_search
@@ -159,9 +160,7 @@ def _get_stat(
 
 
 def _get_sheet(ctx: CommandCallContext, session: Session) -> UnknownArmiesSheet:
-    character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
-    if not character:
-        raise CommandException(f"None of your characters are associated with this channel.")
+    character = get_channel_character(ctx, session)
     sheet = UnknownArmiesSheet.get_for_character(session, character.id)
     if not sheet:
         raise CommandException(

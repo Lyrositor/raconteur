@@ -6,6 +6,7 @@ MESSAGE_CHARS_LIMIT = 2000
 
 
 async def send_message(channel: TextChannel, text: str, files: Optional[list[File]] = None) -> Message:
+    text = replace_emojis(channel, text)
     lines = text.split("\n")
     messages = [""]
     for line in lines:
@@ -22,3 +23,9 @@ async def send_message(channel: TextChannel, text: str, files: Optional[list[Fil
         last_message = await channel.send(message.strip(), files=(files if i == last_idx else None))
     assert last_message
     return last_message
+
+
+def replace_emojis(channel: TextChannel, text: str) -> str:
+    for emoji in channel.guild.emojis:
+        text = text.replace(f":{emoji.name}:", str(emoji))
+    return text

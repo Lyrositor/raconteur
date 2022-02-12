@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+
+{% macro dice_selector(id, value, allowed_values=("1", "2", "3", "4", "5")) %}
+  <div class="input-group dice-selector">
+    <button type="button" class="dice-selector-down btn btn-outline-secondary">-</button>
+    <div class="input-group-text">
+      <img class="dice-selector-image" src="{{ url_for("static", path="images/umbreal/d4.png") }}" alt="Dice Rating" height="24" width="24" />
+      <input type="hidden" class="dice-selector-value" id="{{ id }}" name="{{ id }}" value="{{ value }}" data-allowed-values="{{ ','.join(allowed_values) }}" />
+    </div>
+    <button type="button" class="dice-selector-up btn btn-outline-secondary">+</button>
+  </div>
+{% endmacro %}
+
+{% macro field(id, label, value, help, type="text", max_length=None, min=None, max=None, select_default=None, select_options=None, allowed_dice_values=None, disabled=False) -%}
+  <div class="mb-3 clearfix">
+    {% if type == "dice" %}<div class="float-end">{{ dice_selector(id, value, allowed_dice_values) if allowed_dice_values else dice_selector(id, value) }}</div>{% endif %}
+    <label for="{{ id }}" class="form-label">{{ label }}</label>
+    {% if type == "textarea" %}
+      <textarea class="form-control" id="{{ id }}" name="{{ id }}" aria-describedby="{{ id }}-help" rows="3" {% if max_length %}maxlength="{{ max_length }}"{% endif %} {% if disabled %}disabled{% endif %}>{{ value if value }}</textarea>
+    {% elif type == "select" %}
+      <select class="form-select" id="{{ id }}" name="{{ id }}" {% if disabled %}disabled{% endif %}>
+        {% if select_default %}
+            <option value="" {% if not value %} selected{% endif %}>{{ select_default }}</option>
+        {% endif %}
+        {% for select_option_id, select_option_label in select_options %}
+          <option value="{{ select_option_id }}"{% if select_option_id == value %} selected{% endif %}>{{ select_option_label }}</option>
+        {% endfor %}
+      </select>
+    {% elif type == "dice" %}
+    {% else %}
+      <input type="{{ type }}" class="form-control" id="{{ id }}" name="{{ id }}" aria-describedby="{{ id }}-help" {% if max_length %}maxlength="{{ max_length }}"{% endif %} value="{{ value }}" {% if min != None %}min="{{ min }}"{% endif %} {% if max != None %}max="{{ max }}"{% endif %} {% if disabled %}disabled{% endif %}>
+    {% endif %}
+    <div id="{{ id  }}-help" class="form-text">{{ help|safe }}</div>
+  </div>
+{%- endmacro %}
+
+{% macro distinction(id, label, trait_id, name, description, rating, help) %}
+  <div class="mb-3">
+    <label for="{{ id }}_name" class="form-label">{{ label }}</label>
+    <div class="input-group d-flex mb-3">
+      <input type="hidden" id="{{ id }}_id" name="{{ id }}_id" value="{{ trait_id or '' }}">
+      <input type="text" class="col col-md-8 form-control" id="{{ id }}_name" name="{{ id }}_name" aria-describedby="{{ id }}-help" value="{{ name }}" placeholder="Name">
+      <div class="input-group-text">
+        <img class="dice-selector-image" src="{{ url_for("static", path="images/umbreal/d8.png") }}" alt="Dice Rating" height="24" width="24" />
+      </div>
+    </div>
+    <textarea class="form-control" id="{{ id }}_description" name="{{ id }}_description" aria-describedby="{{ id }}-help" placeholder="Description">{{ description }}</textarea>
+    <div id="{{ id  }}-help" class="form-text">{{ help|safe }}</div>
+  </div>
+{%- endmacro %}
+
+{% block title %}{% if sheet.is_editing %}Edit{% else %}Create{% endif %} Umbreal Sheet{% endblock %}
+
+{% block head_extra %}
+<style>
+.form-label {
+    font-weight: bold;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="errors">
+</div>
+<form method="post" id="sheet-form">
+  {% if sheet.character_id %}
+    <div class="mb-3">
+      <label for="character_id" class="form-label">Character</label>
+      <p>
+        {% for character_id, character_name in characters %}{% if character_id == sheet.character_id %}{{ character_name }}{% endif %}{% endfor %}
+      </p>
+      <input type="hidden" name="character_id" value="{{ sheet.character_id }}" />
+      <div id="{{ id  }}-help" class="form-text">The character to whom this sheet is attached.</div>
+    </div>
+  {% else %}
+    {{ field("character_id", "Character", sheet.character_id, "The character to whom this sheet is attached.", type="select", select_default="Choose Character", select_options=characters, disabled=sheet.is_editing) }}
+  {% endif %}
+
+  <h3>Distinctions</h3>
+
+  <p>Your character is defined by three distinctions, at least one of which should apply in nearly every roll you make.</p>
+
+  {{ distinction("distinction_before", "Before", sheet.distinction_before_id, sheet.distinction_before_name, sheet.distinction_before_description, sheet.distinction_before_rating, "Who your character was before the roleplay, a defining aspect of their past.") }}
+  {{ distinction("distinction_now", "Now", sheet.distinction_now_id, sheet.distinction_now_name, sheet.distinction_now_description, sheet.distinction_now_rating, "Who your character is now, their current profession or position.") }}
+  {{ distinction("distinction_after", "After", sheet.distinction_after_id, sheet.distinction_after_name, sheet.distinction_after_description, sheet.distinction_after_rating, "Who your character aspires to be, their ambitions, desires and drives.") }}
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Attributes</h3>
+
+  <p>The attributes of your character are broad indicators of their strengths.</p>
+
+  <p>When creating a new character, you have <strong>10 points</strong> to distribute (each point being worth a step up of one die).</p>
+
+  <table class="table table-hover table-borderless">
+    <tbody>
+      <tr><td>{{ field("attribute_deftness", "Deftness", sheet.attribute_deftness, "Agility, reactivity, delicate manipulations", type="dice") }}</td></tr>
+      <tr><td>{{ field("attribute_force", "Force", sheet.attribute_force, "Brute strength, athleticism", type="dice") }}</td></tr>
+      <tr><td>{{ field("attribute_intellect", "Intellect", sheet.attribute_intellect, "Logic, conceptualization, knowledge", type="dice") }}</td></tr>
+      <tr><td>{{ field("attribute_magnetism", "Magnetism", sheet.attribute_magnetism, "Charisma, guile", type="dice") }}</td></tr>
+      <tr><td>{{ field("attribute_perception", "Perception", sheet.attribute_perception, "Awareness, recognition", type="dice") }}</td></tr>
+      <tr><td>{{ field("attribute_solidity", "Solidity", sheet.attribute_solidity, "Resilience, vitality, physicality", type="dice") }}</td></tr>
+      <tr><td>{{ field("attribute_will", "Will", sheet.attribute_will, "Resolve, self-definition, courage", type="dice") }}</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Skills</h3>
+
+  <p>Your character's skills are specialized indicators of strength, derived from training and knowledge.</p>
+
+  <p>When creating a new character, you have <strong>12 points</strong> to distribute (each point being worth a step up of one die).</p>
+
+  <table class="table table-hover table-borderless">
+    <tbody>
+      <tr><td>{{ field("skill_ambulatorics", "Ambulatorics", sheet.skill_ambulatorics, "Running, jumping, climbing", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_antagonomics_melee", "Antagonomics (melee)", sheet.skill_antagonomics_melee, "Melee combat, fist fights, tackling", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_antagonomics_ranged", "Antagonomics (ranged)", sheet.skill_antagonomics_ranged, "Ranged combat, guns, external ship weaponry", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_cartography", "Cartography", sheet.skill_cartography, "Navigation, carving light into shadow", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_cognitoscopy", "Cognitoscopy", sheet.skill_cognitoscopy, "Psychiatry, shadowing detection", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_dissimulation", "Dissimulation", sheet.skill_dissimulation, "Stealth, lies, deceit", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_dramaturgy", "Dramaturgy", sheet.skill_dramaturgy, "Putting on a flashy show, distracting", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_engineering", "Engineering", sheet.skill_engineering, "Building and repairing machines", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_erudition", "Erudition", sheet.skill_erudition, "Knowledge of specialized topics", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_fidophysics", "Fidophysics", sheet.skill_fidophysics, "Engineering the laws of reality", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_finespeech", "Finespeech", sheet.skill_finespeech, "Diplomacy, conflict resolution", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_gadgetry", "Gadgetry", sheet.skill_gadgetry, "Operating computers, devices, gadgets", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_oneiromancy", "Oneiromancy", sheet.skill_oneiromancy, "Creating, tailoring, resisting dreams", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_perspiraction", "Perspiraction", sheet.skill_perspiraction, "Manual labor, lifting, pushing, digging, pulling, hauling", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_remedics", "Remedics", sheet.skill_remedics, "Healing", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_steelthink", "Steelthink", sheet.skill_steelthink, "Focus, meditation", type="dice") }}</td></tr>
+      <tr><td>{{ field("skill_vehiculation", "Vehiculation", sheet.skill_vehiculation, "Piloting, driving, vehicle knowledge", type="dice") }}</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Signature Assets</h3>
+
+  <p>Signature Assets are assets which your character always has access to. You begin the game with two free signature assets, and can add more through advancement.</p>
+
+  <table class="table table-hover table-borderless" id="signature-assets">
+    <tbody>
+      {% for signature_asset in sheet.signature_assets %}
+        {% set signature_asset_id = "signature-assets[" ~ loop.index ~ "]" %}
+        <tr id="{{ signature_asset_id }}" class="signature-asset">
+          <th>
+            <input type="text" class="form-control" id="{{ signature_asset_id }}.name" name="{{ signature_asset_id }}.name" value="{{ signature_asset.name }}" placeholder="Name">
+            <input type="hidden" id="{{ signature_asset_id }}.id" name="{{ signature_asset_id }}.id" value="{{ signature_asset.id or '' }}">
+          </th>
+          <td>
+            <textarea class="form-control" id="{{ signature_asset_id }}.description" name="{{ signature_asset_id }}.description" placeholder="Description">{{ signature_asset.description }}</textarea>
+          </td>
+          <td>
+            {{ dice_selector(signature_asset_id + ".value", signature_asset.value, allowed_values=("2", "3", "4", "5")) }}
+          </td>
+          <td>
+            <button type="button" name="{{ signature_asset_id }}.action" value="delete-signature-asset" class="btn btn-danger">Delete</button>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button type="button" name="action" value="add_signature_asset" class="btn btn-success" id="add-signature-asset">Add Signature Asset</button>
+  <template id="signature-asset-template">
+    <tr id="signature-assets[%idx%]" class="signature-asset">
+      <th>
+        <input type="text" class="form-control" id="signature-assets[%idx%].name" name="signature-assets[%idx%].name" value="" placeholder="Name">
+        <input type="hidden" id="signature-assets[%idx%].id" name="signature-assets[%idx%].id" value="">
+      </th>
+      <td>
+        <textarea class="form-control" id="signature-assets[%idx%].description" name="signature-assets[%idx%].description" placeholder="Description"></textarea>
+      </td>
+      <td>
+        {{ dice_selector("signature-assets[%idx%].value", 2, allowed_values=("2", "3", "4", "5")) }}
+      </td>
+      <td>
+        <button type="button" name="signature-assets[%idx%].action" value="delete-signature-asset" class="btn btn-danger">Delete</button>
+      </td>
+    </tr>
+  </template>
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Lawbreaks</h3>
+
+  <p>Lawbreaks (SFX in Cortex Prime terminology) allows your character to take a special action when a certain trigger is met, usually at a cost.</p>
+
+  <p>You can use the following emojis in your description: <code>:PP:</code>, <code>:d4:</code>, <code>:d6:</code>, <code>:d8:</code>, <code>:d10:</code>, <code>:d12:</code>.</p>
+
+  <table class="table table-hover table-borderless" id="lawbreaks">
+    <tbody>
+      {% for lawbreak in sheet.lawbreaks %}
+        {% set lawbreak_id = "lawbreaks[" ~ loop.index ~ "]" %}
+        <tr id="{{ lawbreak_id }}" class="lawbreak">
+          <th>
+            <input type="text" class="form-control" id="{{ lawbreak_id }}.name" name="{{ lawbreak_id }}.name" value="{{ lawbreak.name }}" placeholder="Name">
+            <input type="hidden" id="{{ lawbreak_id }}.id" name="{{ lawbreak_id }}.id" value="{{ lawbreak.id or '' }}">
+          </th>
+          <td>
+            <textarea class="form-control" id="{{ lawbreak_id }}.description" name="{{ lawbreak_id }}.description" placeholder="Description">{{ lawbreak.description }}</textarea>
+          </td>
+          <td>
+            <button type="button" name="{{ lawbreak_id }}.action" value="delete-lawbreak" class="btn btn-danger">Delete</button>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button type="button" name="action" value="add_lawbreak" class="btn btn-success" id="add-lawbreak">Add Lawbreak</button>
+  <template id="lawbreak-template">
+    <tr id="lawbreaks[%idx%]" class="lawbreak">
+      <th>
+        <input type="text" class="form-control" id="lawbreaks[%idx%].name" name="lawbreaks[%idx%].name" value="" placeholder="Name">
+        <input type="hidden" id="lawbreaks[%idx%].id" name="lawbreaks[%idx%].id" value="">
+      </th>
+      <td>
+        <textarea class="form-control" id="lawbreaks[%idx%].description" name="lawbreaks[%idx%].description" placeholder="Description"></textarea>
+      </td>
+      <td>
+        <button type="button" name="lawbreaks[%idx%].action" value="delete-lawbreak" class="btn btn-danger">Delete</button>
+      </td>
+    </tr>
+  </template>
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Powers</h3>
+
+  <p>If your character acquires special powers during the roleplay, they will get recorded here.</p>
+
+  <table class="table table-hover table-borderless">
+    <tbody>
+      <tr><td>{{ field("power_denebulation", "Denebulation", sheet.power_denebulation, "Divination, interpretation of prophecies", type="dice", allowed_dice_values=("0", "2", "3", "4", "5")) }}</td></tr>
+      <tr><td>{{ field("power_esodactyly", "Esodactyly", sheet.power_esodactyly, "Telekinesis, remote sensation", type="dice", allowed_dice_values=("0", "2", "3", "4", "5")) }}</td></tr>
+      <tr><td>{{ field("power_kleinsicht", "Kleinsicht", sheet.power_kleinsicht, "Senses-independent knowledge of one's surroundings", type="dice", allowed_dice_values=("0", "2", "3", "4", "5")) }}</td></tr>
+      <tr><td>{{ field("power_lithargy", "Lithargy", sheet.power_lithargy, "Immunity to reality's impositions", type="dice", allowed_dice_values=("0", "2", "3", "4", "5")) }}</td></tr>
+      <tr><td>{{ field("power_mementogenesis", "Mementogenesis", sheet.power_mementogenesis, "Creating, altering, deleting memories", type="dice", allowed_dice_values=("0", "2", "3", "4", "5")) }}</td></tr>
+      <tr><td>{{ field("power_morflexicity", "Morflexicity", sheet.power_morflexicity, "Altering one's body", type="dice", allowed_dice_values=("0", "2", "3", "4", "5")) }}</td></tr>
+      <tr><td>{{ field("power_sensartistry", "Sensartistry", sheet.power_sensartistry, "Stimulation, synthesis of sensations", type="dice", allowed_dice_values=("0", "2", "3", "4", "5")) }}</td></tr>
+      <tr><td>{{ field("power_subsonance", "Subsonance", sheet.power_subsonance, "Telepathy, thought inception", type="dice", allowed_dice_values=("0", "2", "3", "4", "5")) }}</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <h3>Personal Milestone</h3>
+
+  <p>Your character advances by gaining and spending XP, and XP is gained by clearing milestones. Any given session has a group milestone common to everyone, but your character also has a personal milestone which you define. Each milestone has three levels that have different criteria for being hit.</p>
+
+  <p>You can change these every time a new event/session begins.</p>
+
+  {{ field("xp_1_milestone", "1 XP Level", sheet.xp_1_milestone, "Gain 1 XP whenever you clear this level. Can be reached many times per scene.") }}
+
+  {{ field("xp_3_milestone", "3 XP Level", sheet.xp_3_milestone, "Gain 3 XP whenever you clear this level. Can be reached once per scene.") }}
+
+  {{ field("xp_10_milestone", "10 XP Level", sheet.xp_10_milestone, "Gain 10 XP whenever you clear this level. Can be reached once per event/session.") }}
+
+  <hr class="mx-auto mx-1 my-4" style="max-width: 500px;"/>
+
+  <div class="mb-3">
+    <button name="action" value="submit" class="btn btn-primary" id="submit">{% if sheet.is_editing %}Edit{% else %}Create{% endif %}</button>
+    <a class="btn btn-secondary" href="{{ url_for("umbreal_list", current_game_id=current_game.guild_id) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+  <script type="text/javascript">
+      const DICE_RATINGS = {
+          0: null,
+          1: '{{ url_for("static", path="images/umbreal/d4.png") }}',
+          2: '{{ url_for("static", path="images/umbreal/d6.png") }}',
+          3: '{{ url_for("static", path="images/umbreal/d8.png") }}',
+          4: '{{ url_for("static", path="images/umbreal/d10.png") }}',
+          5: '{{ url_for("static", path="images/umbreal/d12.png") }}',
+      };
+
+      const signatureAssetTemplate = $("#signature-asset-template");
+      const signatureAssets = $("#signature-assets");
+      const signatureAssetsBody = $("tbody", signatureAssets);
+      const addSignatureAssetButton = $("#add-signature-asset");
+      let currentSignatureAssetIndex = {{ sheet.signature_assets|length }} + 1;
+
+      addSignatureAssetButton.click(function () {
+          const cloneHtml = signatureAssetTemplate.html().replaceAll("%idx%", `${currentSignatureAssetIndex}`);
+          const newRow = $(cloneHtml);
+          $("button[value='delete-signature-asset']", newRow).click(() => newRow.remove());
+          signatureAssetsBody.append(newRow);
+          currentSignatureAssetIndex++;
+
+          $(".dice-selector-down", newRow).click(function () { updateDiceSelector(newRow, -1) });
+          $(".dice-selector-up", newRow).click(function () { updateDiceSelector(newRow, 1) });
+          updateDiceSelector(newRow, 0)
+      });
+      $(".signature-asset").each(function () { $("button[value='delete-signature-asset']", this).click(() => this.remove()); });
+
+      const lawbreakTemplate = $("#lawbreak-template");
+      const lawbreaks = $("#lawbreaks");
+      const lawbreaksBody = $("tbody", lawbreaks);
+      const addLawbreakButton = $("#add-lawbreak");
+      let currentLawbreakIndex = {{ sheet.lawbreaks|length }} + 1;
+
+      addLawbreakButton.click(function () {
+          const cloneHtml = lawbreakTemplate.html().replaceAll("%idx%", `${currentLawbreakIndex}`);
+          const newRow = $(cloneHtml);
+          $("button[value='delete-lawbreak']", newRow).click(() => newRow.remove());
+          lawbreaksBody.append(newRow);
+          currentLawbreakIndex++;
+      });
+      $(".lawbreak").each(function () { $("button[value='delete-lawbreak']", this).click(() => this.remove()); });
+
+      const submitButton = $("#submit");
+      const errors = $("#errors");
+      const diceSelectors = $(".dice-selector");
+
+      function updateDiceSelector(diceSelector, delta) {
+          const diceSelectorValue = $(".dice-selector-value", diceSelector);
+          const diceSelectorImage = $(".dice-selector-image", diceSelector);
+          const allowedValues = diceSelectorValue.data("allowed-values").split(",").map(v => parseInt(v));
+
+          const currentValue = parseInt(diceSelectorValue.val());
+          const currentIdx = allowedValues.indexOf(currentValue);
+          const newIdx = currentIdx + delta;
+          const newValue = allowedValues[newIdx];
+          if (newValue !== undefined) {
+              const newImage = DICE_RATINGS[newValue];
+              diceSelectorValue.val(newValue);
+              if (newImage !== null) {
+                  diceSelectorImage.css("opacity", 1);
+                  diceSelectorImage.prop("src", newImage);
+              } else {
+                  diceSelectorImage.css("opacity", 0);
+              }
+          }
+      }
+
+      $(".dice-selector-down", diceSelectors).click(function () { updateDiceSelector($(this).parent(), -1) });
+      $(".dice-selector-up", diceSelectors).click(function () { updateDiceSelector($(this).parent(), 1) });
+      diceSelectors.each(function () { updateDiceSelector(this, 0) });
+
+      submitButton.click(function (event) {
+          event.preventDefault();
+          const formData = new FormData(document.getElementById("sheet-form"));
+          const submitData = {
+              "is_editing": {% if sheet.is_editing %} true {% else %} false {% endif %}
+          };
+          const signatureAssets = {};
+          const lawbreaks = {};
+          for (const pair of formData.entries()) {
+              const key = pair[0];
+              const value = pair[1];
+              if (key.startsWith("signature-assets")) {
+                  const matches = key.match(/signature-assets\[(\d+)]\.(.+)/);
+                  if (matches != null) {
+                      const idx = matches[1];
+                      const subKey = matches[2];
+                      if (!signatureAssets.hasOwnProperty(idx)) {
+                          signatureAssets[idx] = {};
+                      }
+                      if (subKey === "id" && value === "") {
+                          signatureAssets[idx][subKey] = null;
+                      } else {
+                          signatureAssets[idx][subKey] = value;
+                      }
+                  }
+              } else if (key.startsWith("lawbreaks")) {
+                  const matches = key.match(/lawbreaks\[(\d+)]\.(.+)/);
+                  if (matches != null) {
+                      const idx = matches[1];
+                      const subKey = matches[2];
+                      if (!lawbreaks.hasOwnProperty(idx)) {
+                          lawbreaks[idx] = {};
+                      }
+                      if (subKey === "id" && value === "") {
+                           lawbreaks[idx][subKey] = null;
+                      } else {
+                          lawbreaks[idx][subKey] = value;
+                      }
+                  }
+              } else if (key.endsWith("_id") && value === "") {
+                  submitData[key] = null;
+              }
+              else {
+                submitData[key] = value;
+              }
+          }
+          submitData.signature_assets = Object.values(signatureAssets);
+          submitData.lawbreaks = Object.values(lawbreaks);
+          $.post(
+              "{{ url_for('umbreal_sheet', current_game_id=current_game.guild_id) }}",
+              JSON.stringify(submitData),
+              function (response) {
+                  errors.empty()
+                  if (response.success) {
+                      if (response.redirect !== null) {
+                          window.location.href = response.redirect;
+                      } else {
+                          window.scrollTo(0, 0);
+                      }
+                  } else {
+                      for (const error of response.errors) {
+                          addError(error);
+                      }
+                      window.scrollTo(0, 0);
+                  }
+              },
+              "json",
+          ).fail(function () {
+              errors.empty()
+              addError("An unknown error occurred, please try again later.");
+              window.scrollTo(0, 0);
+          });
+      });
+
+      function addError(text) {
+          const errorDiv = $("<div class=\"alert alert-danger\" role=\"alert\"></div>");
+          errorDiv.text(text);
+          errors.append(errorDiv);
+      }
+  </script>
+{% endblock %}
