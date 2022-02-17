@@ -324,7 +324,7 @@ class CharacterPlugin(Plugin):
     )
     async def undo(self, ctx: CommandCallContext) -> str:
         with get_session() as session:
-            character = _get_channel_character(ctx, session)
+            character = get_channel_character(ctx, session)
             cached_message: Optional[CachedMessage] = self.cached_messages["characters"].get(character.id)
             if cached_message:
                 fetch_messages = []

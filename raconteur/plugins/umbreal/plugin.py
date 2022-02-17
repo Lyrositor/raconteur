@@ -50,7 +50,7 @@ class RollChoice:
     def __lt__(self, other: "RollChoice") -> bool:
         if self.total < other.total:
             return True
-        if self.effect < other.effect:
+        if self.total == other.total and self.effect < other.effect:
             return True
         return False
 
@@ -99,10 +99,10 @@ class UmbrealPlugin(Plugin):
         channel = reaction.message.channel
         for test in self.ongoing_tests.values():
             try:
-                if test.difficulty.message_id == reaction.message.id:
+                if test.difficulty.message_id == reaction.message.id and test.difficulty.member_id == user.id:
                     await _set_test_difficulty_choice(channel, test, test.difficulty.options[option_idx])
                     break
-                if test.player.message_id == reaction.message.id:
+                if test.player.message_id == reaction.message.id and test.player.member_id == user.id:
                     await _set_test_player_choice(channel, test, test.player.options[option_idx])
                     del self.ongoing_tests[test.name]
                     break
@@ -117,8 +117,9 @@ class UmbrealPlugin(Plugin):
     async def test(self, ctx: CommandCallContext, name: str, *traits: str) -> None:
         with get_session() as session:
             if name not in self.ongoing_tests:
-                self.ongoing_tests[name] = Test(name=name)
-                await _roll_for_test_side(ctx, session, self.ongoing_tests[name].difficulty, traits)
+                test = Test(name=name)
+                await _roll_for_test_side(ctx, session, test.difficulty, traits)
+                self.ongoing_tests[name] = test
             elif self.ongoing_tests[name].difficulty.choice:
                 await _roll_for_test_side(
                     ctx,
@@ -183,14 +184,14 @@ async def _set_test_difficulty_choice(channel: TextChannel, test: Test, choice: 
 
 async def _set_test_player_choice(channel: TextChannel, test: Test, choice: RollChoice) -> None:
     test.player.choice = choice
-    message = f"**{test.player.user_name}** sets their roll for `{test.name}` to {test.player.choice}."
+    message = f"**{test.player.user_name}** sets their roll for `{test.name}` to {test.player.choice}. "
     diff = test.player.choice.total - test.difficulty.choice.total
     if diff >= 5:
         step_ups = int(diff / 5)
         new_effect = min(test.player.choice.effect + step_ups * 2, 12)
-        message = f"This is a **heroic success**. The effect die is stepped up to :d{new_effect}:."
+        message += f"This is a **heroic success**. The effect die is stepped up to :d{new_effect}:."
     elif diff > 0:
-        message = f"This is a **success** with effect :d{test.player.choice.effect}:."
+        message += f"This is a **success** with effect :d{test.player.choice.effect}:."
     else:
         message += "This is a **failure**."
     await send_message(channel, message)
