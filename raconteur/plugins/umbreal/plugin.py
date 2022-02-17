@@ -150,11 +150,45 @@ class UmbrealPlugin(Plugin):
         del self.ongoing_tests[name]
 
     @command(
-        help_msg="Hands out XP to the specified character.",
-        requires_gm=True
+        help_msg="Gains or spends some plot points. If no value is specified, shows the current number of plot points.",
+        requires_player=True
     )
-    async def xp(self, ctx: CommandCallContext, character: str, amount: int) -> str:
-        pass
+    async def pp(self, ctx: CommandCallContext, amount: Optional[int] = None) -> str:
+        with get_session() as session:
+            sheet = _get_sheet(ctx, session)
+            if not sheet:
+                raise CommandException("Failed to locate Umbreal character sheet")
+            if not amount:
+                return f"**{sheet.character.name}** currently has **{sheet.plot_points}** :PP:."
+            sheet.plot_points += amount
+            session.commit()
+            return f"**{sheet.character.name}** {'gains' if amount > 0 else 'spends'} **{abs(amount)}** :PP:."
+
+    @command(
+        help_msg="Gains or spends some XP. If no value is specified, shows the current amount of XP.",
+        requires_player=True
+    )
+    async def xp(self, ctx: CommandCallContext, amount: Optional[int] = None) -> str:
+        with get_session() as session:
+            sheet = _get_sheet(ctx, session)
+            if not sheet:
+                raise CommandException("Failed to locate Umbreal character sheet")
+            if not amount:
+                return (
+                    f"**{sheet.character.name}** currently has **{sheet.xp_current} XP**, with a lifetime total of "
+                    f"**{sheet.xp_lifetime} XP**."
+                )
+            sheet.xp_current += amount
+            if amount > 0:
+                sheet.xp_lifetime += amount
+                msg = f"**{sheet.character.name}** gains **{amount} XP**, for a new total of **{sheet.xp_current}** XP."
+            else:
+                msg = (
+                    f"**{sheet.character.name}** loses **{abs(amount)} XP**, for a new total of **{sheet.xp_current}** "
+                    f"XP."
+                )
+            session.commit()
+            return msg
 
     @classmethod
     def get_web_router(cls) -> Optional[APIRouter]:
