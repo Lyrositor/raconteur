@@ -20,7 +20,7 @@ from raconteur.plugins.umbreal.web import umbreal_router, umbreal_list
 from raconteur.utils import fuzzy_search
 
 DICE_ROLL_PATTERN = re.compile(r"(?P<num>\d+)?d(?P<rating>\d+)")
-TRAIT_ROLL_PATTERN = re.compile(r"(?P<character>.+?)?!(?P<trait>.+)")
+TRAIT_ROLL_PATTERN = re.compile(r"(?:(?P<character>.+?)?!)?(?P<trait>.+)")
 PLAYER_VALID_TRAIT_SETS = {
     UmbrealTraitSet.ASSETS,
     UmbrealTraitSet.ATTRIBUTES,
@@ -75,9 +75,16 @@ class Test:
     player: Side = field(default_factory=lambda: Side())
 
 
+@dataclass
+class Action:
+    name: str
+    action: Side = field(default_factory=lambda: Side())
+    reaction: Side = field(default_factory=lambda: Side())
+
+
 class UmbrealPlugin(Plugin):
     ongoing_tests: dict[str, Test]
-    ongoing_contests: dict  # TODO
+    ongoing_actions: dict[str, Action]
 
     @classmethod
     def assert_models(cls) -> None:
@@ -86,7 +93,7 @@ class UmbrealPlugin(Plugin):
     def __init__(self, bot):
         super().__init__(bot)
         self.ongoing_tests = {}
-        self.ongoing_contests = {}
+        self.ongoing_actions = {}
 
     async def on_reaction_add(self, reaction: Reaction, user: Member) -> None:
         emoji = reaction.emoji if isinstance(reaction.emoji, str) else reaction.emoji.name
@@ -97,17 +104,32 @@ class UmbrealPlugin(Plugin):
             # Not a choice emoji
             return
         channel = reaction.message.channel
+
+        # Check if this is a test
         for test in self.ongoing_tests.values():
             try:
                 if test.difficulty.message_id == reaction.message.id and test.difficulty.member_id == user.id:
                     await _set_test_difficulty_choice(channel, test, test.difficulty.options[option_idx])
-                    break
+                    return
                 if test.player.message_id == reaction.message.id and test.player.member_id == user.id:
                     await _set_test_player_choice(channel, test, test.player.options[option_idx])
                     del self.ongoing_tests[test.name]
-                    break
+                    return
             except IndexError:
-                break
+                return
+
+        # Check if this is an action
+        for action in self.ongoing_actions.values():
+            try:
+                if action.action.message_id == reaction.message.id and action.action.member_id == user.id:
+                    await _set_action_choice(channel, action, action.action.options[option_idx])
+                    return
+                if action.reaction.message_id == reaction.message.id and action.reaction.member_id == user.id:
+                    await _set_reaction_choice(channel, action, action.reaction.options[option_idx])
+                    del self.ongoing_actions[action.name]
+                    return
+            except IndexError:
+                return
 
     @command(
         help_msg="Runs a named Cortex Prime test. If a test with that name doesn't exist, this roll sets the "
@@ -118,20 +140,47 @@ class UmbrealPlugin(Plugin):
         with get_session() as session:
             if name not in self.ongoing_tests:
                 test = Test(name=name)
-                await _roll_for_test_side(ctx, session, test.difficulty, traits)
+                await _roll_for_test_side(ctx, session, test.difficulty, test.name, traits)
                 self.ongoing_tests[name] = test
             elif self.ongoing_tests[name].difficulty.choice:
                 await _roll_for_test_side(
                     ctx,
                     session,
                     self.ongoing_tests[name].player,
+                    self.ongoing_tests[name].name,
                     traits,
-                    self.ongoing_tests[name].difficulty.choice.total
+                    self.ongoing_tests[name].difficulty.choice
                 )
             else:
                 raise CommandException(
-                    "You need to set choose a roll result, either by reacting to the results list or by using "
+                    "You need to choose a roll result, either by reacting to the results list or by using "
                     "`.testset`."
+                )
+
+    @command(
+        help_msg="Runs a named Cortex Prime action roll. If an action with that name doesn't exist, this sets the "
+                 "action roll; otherwise, it is the reaction roll.",
+        requires_player=True
+    )
+    async def action(self, ctx: CommandCallContext, name: str, *traits: str) -> None:
+        with get_session() as session:
+            if name not in self.ongoing_actions:
+                action = Action(name=name)
+                await _roll_for_action_side(ctx, session, action.action, action.name, traits)
+                self.ongoing_actions[name] = action
+            elif self.ongoing_actions[name].action.choice:
+                await _roll_for_action_side(
+                    ctx,
+                    session,
+                    self.ongoing_actions[name].reaction,
+                    self.ongoing_actions[name].name,
+                    traits,
+                    self.ongoing_actions[name].action.choice
+                )
+            else:
+                raise CommandException(
+                    "You need to choose a roll result, either by reacting to the results list or by using "
+                    "`.actionset`."
                 )
 
     @command(
@@ -140,14 +189,35 @@ class UmbrealPlugin(Plugin):
     )
     async def test_set(self, ctx: CommandCallContext, name: str, total: int, effect: int) -> None:
         if name not in self.ongoing_tests:
-            raise CommandException(f"There is no test with the name: {name}")
+            raise CommandException(f"There is no test with the name `{name}`")
         test = self.ongoing_tests[name]
         choice = RollChoice(total=total, effect=effect)
-        if not test.difficulty.choice:
+        if test.difficulty.member_id == ctx.member.id:
             await _set_test_difficulty_choice(ctx.channel, test, choice)
             return
-        await _set_test_player_choice(ctx.channel, test, choice)
-        del self.ongoing_tests[name]
+        elif test.player.member_id == ctx.member.id:
+            await _set_test_player_choice(ctx.channel, test, choice)
+            del self.ongoing_tests[name]
+        else:
+            raise CommandException(f"You need to roll for test {name} first")
+
+    @command(
+        help_msg="Manually sets the result of a named action, if a custom arrangement is desired.",
+        requires_player=True
+    )
+    async def action_set(self, ctx: CommandCallContext, name: str, total: int, effect: int) -> None:
+        if name not in self.ongoing_actions:
+            raise CommandException(f"There is no action with the name `{name}`")
+        action = self.ongoing_actions[name]
+        choice = RollChoice(total=total, effect=effect)
+        if action.action.member_id == ctx.member.id:
+            await _set_action_choice(ctx.channel, action, choice)
+            return
+        elif action.reaction.member_id == ctx.member.id:
+            await _set_reaction_choice(ctx.channel, action, choice)
+            del self.ongoing_actions[name]
+        else:
+            raise CommandException(f"You need to roll for action `{name}` first")
 
     @command(
         help_msg="Gains or spends some plot points. If no value is specified, shows the current number of plot points.",
@@ -204,49 +274,103 @@ class UmbrealPlugin(Plugin):
 
 
 async def _set_test_difficulty_choice(channel: TextChannel, test: Test, choice: RollChoice) -> None:
-    test.difficulty.choice = choice
-    await send_message(
-        channel,
-        f"**{test.difficulty.user_name}** sets the difficulty for `{test.name}` to {test.difficulty.choice}."
-    )
-    react_message: Message = await channel.fetch_message(test.difficulty.message_id)
-    await asyncio.gather(
-        react_message.edit(content=react_message.content.split("\n")[0]),
-        react_message.clear_reactions()
-    )
+    await _set_initial_choice(channel, test.name, test.difficulty, choice)
 
 
 async def _set_test_player_choice(channel: TextChannel, test: Test, choice: RollChoice) -> None:
-    test.player.choice = choice
-    message = f"**{test.player.user_name}** sets their roll for `{test.name}` to {test.player.choice}. "
-    diff = test.player.choice.total - test.difficulty.choice.total
-    if diff >= 5:
-        step_ups = int(diff / 5)
-        new_effect = min(test.player.choice.effect + step_ups * 2, 12)
-        message += f"This is a **heroic success**. The effect die is stepped up to :d{new_effect}:."
-    elif diff > 0:
-        message += f"This is a **success** with effect :d{test.player.choice.effect}:."
-    else:
-        message += "This is a **failure**."
-    await send_message(channel, message)
+    await _set_counter_choice(channel, test.name, test.difficulty, test.player, choice, False, False)
 
-    react_message: Message = await channel.fetch_message(test.player.message_id)
+
+async def _set_action_choice(channel: TextChannel, action: Action, choice: RollChoice) -> None:
+    await _set_initial_choice(channel, action.name, action.action, choice)
+
+
+async def _set_reaction_choice(channel: TextChannel, action: Action, choice: RollChoice) -> None:
+    await _set_counter_choice(channel, action.name, action.action, action.reaction, choice, True, True)
+
+
+async def _set_initial_choice(channel: TextChannel, name: str, side: Side, choice: RollChoice) -> None:
+    side.choice = choice
+    await send_message(channel, f"**{side.user_name}** sets their roll for `{name}` to {side.choice}.")
+    react_message: Message = await channel.fetch_message(side.message_id)
     await asyncio.gather(
-        react_message.edit(content=react_message.content.split("\n")[0]),
-        react_message.clear_reactions()
+        react_message.edit(content=react_message.content.split("You can react with")[0].rstrip()),
+        react_message.clear_reactions(),
     )
 
 
+async def _set_counter_choice(
+    channel: TextChannel,
+    name: str,
+    initial: Side,
+    counter: Side,
+    choice: RollChoice,
+    for_initial: bool,
+    wins_ties: bool,
+) -> None:
+    counter.choice = choice
+    message = f"**{counter.user_name}** sets their roll for `{name}` to {counter.choice}. "
+    diff = (
+        (initial.choice.total - counter.choice.total) if for_initial else (counter.choice.total - initial.choice.total)
+    )
+    for_name = initial.user_name if for_initial else counter.user_name
+    if diff >= 5:
+        step_ups = int(diff / 5)
+        new_effect = min(counter.choice.effect + step_ups * 2, 12)
+        message += f"This is a **heroic success** for **{for_name}**. The effect die is stepped up to :d{new_effect}:."
+    elif diff > 0 or (wins_ties and diff == 0):
+        message += f"This is a **success** for **{for_name}** with effect :d{counter.choice.effect}:."
+    else:
+        message += f"This is a **failure** for **{for_name}**."
+    await send_message(channel, message)
+
+    if counter.message_id:
+        react_message: Message = await channel.fetch_message(counter.message_id)
+        await asyncio.gather(
+            react_message.edit(content=react_message.content.split("You can react with")[0].rstrip()),
+            react_message.clear_reactions(),
+        )
+
+
 async def _roll_for_test_side(
-    ctx: CommandCallContext, session: Session, side: Side, trait_names: Iterable[str], difficulty: Optional[int] = None
+    ctx: CommandCallContext,
+    session: Session,
+    side: Side,
+    roll_name: str,
+    trait_names: Iterable[str],
+    difficulty: Optional[RollChoice] = None,
+) -> None:
+    await _roll_for_side(ctx, session, side, trait_names)
+    text = _build_roll_message(side.user_name, roll_name, side.rolls, side.options, "testset", difficulty)
+    await _send_roll_choice_message(ctx, side, text)
+
+
+async def _roll_for_action_side(
+    ctx: CommandCallContext,
+    session: Session,
+    side: Side,
+    roll_name: str,
+    trait_names: Iterable[str],
+    action: Optional[RollChoice] = None,
+) -> None:
+    await _roll_for_side(ctx, session, side, trait_names)
+    text = _build_roll_message(side.user_name, roll_name, side.rolls, side.options, "actionset", action)
+    await _send_roll_choice_message(ctx, side, text)
+
+
+async def _roll_for_side(
+    ctx: CommandCallContext, session: Session, side: Side, trait_names: Iterable[str]
 ) -> None:
     side.member_id = ctx.member.id
     side.user_name = _get_user_name(ctx, session)
     side.rolls = _roll(session, ctx, trait_names)
     side.options = _determine_best_choices(side.rolls)
     side.choice = RollChoice(total=0, effect=4) if not side.options else None
+
+
+async def _send_roll_choice_message(ctx: CommandCallContext, side: Side, text: str) -> None:
     # TODO Fix this so that it supports rooms that are private to the user
-    message = await send_message(ctx.channel, _build_roll_message(side.user_name, side.rolls, side.options, difficulty))
+    message = await send_message(ctx.channel, text)
     side.message_id = message.id
     await asyncio.gather(*[message.add_reaction(_get_unicode_emoji_for_choice(i)) for i in range(len(side.options))])
 
@@ -273,10 +397,15 @@ def _get_sheet(ctx: CommandCallContext, session: Session) -> Optional[UmbrealShe
 
 
 def _build_roll_message(
-    name: str, results: list[DiceResult], choices: list[RollChoice], difficulty: Optional[int] = None
+    name: str,
+    roll_name: str,
+    results: list[DiceResult],
+    choices: list[RollChoice],
+    set_command: str,
+    to_beat: Optional[RollChoice] = None,
 ) -> str:
     text = (
-        f"**{name}** rolls "
+        f"**{name}** rolls for `{roll_name}`: "
         + ", ".join(f"**{result.value}** ({result.name} :d{result.rating}:)" for result in results) + "."
     )
     valid_results = _get_valid_results(results)
@@ -286,18 +415,17 @@ def _build_roll_message(
         text += "\n\nThis is a **botch**. Your result is **0** :d4:."
     elif num_hitches:
         text += f"\n\nThere are **{num_hitches} hitches**. "
-        if difficulty is None:
-            text += "The player can activate an **opportunity** for 1 :PP:."
-        else:
-            text += "The GM can activate **complications** (1 :PP:/complication)."
 
     if valid_results:
         text += (
-            "\n\nYou can react with one of the following pre-determined results, or use `.testset` to specify a custom "
-            "result (you can include more dice in the result by spending 1 :PP: per die):\n"
+            f"\n\nYou can react with one of the following pre-determined results, or use `.{set_command}` to specify a "
+            "custom result (you can include more dice in the result by spending 1 :PP: per die):\n"
         )
         for i, choice in enumerate(choices):
             text += f"\n:{_get_emoji_name_for_choice(i)}: {choice}"
+
+        if to_beat is not None:
+            text += f"\n\nThe roll to beat is {to_beat}"
 
     return text
 

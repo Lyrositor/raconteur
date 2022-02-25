@@ -724,16 +724,9 @@ def get_channel_character(ctx: CommandCallContext, session: Session) -> Characte
         get_setting(CharacterPlugin.__name__, session, ctx.guild, "use_channel_navigation")
     )
     if use_channel_navigation:
-        # Channel navigation assumes there is only one character per player per location
-        location = Location.get_for_channel(session, ctx.guild.id, ctx.channel.id)
-        character = next(
-            (
-                c
-                for c in Character.get_all_of_member(session, ctx.guild.id, ctx.member.id)
-                if c.location_id == location.id
-            ),
-            None
-        )
+        # Channel navigation assumes there is only one character per player
+        characters = Character.get_all_of_member(session, ctx.guild.id, ctx.member.id)
+        character = characters[0] if len(characters) == 1 else None
     else:
         character = Character.get_for_channel(session, ctx.channel.id, ctx.member.id)
     if not character:
