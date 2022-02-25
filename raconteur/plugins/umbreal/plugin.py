@@ -314,12 +314,13 @@ async def _set_counter_choice(
         (initial.choice.total - counter.choice.total) if for_initial else (counter.choice.total - initial.choice.total)
     )
     for_name = initial.user_name if for_initial else counter.user_name
+    effect = initial.choice.effect if for_initial else counter.choice.effect
     if diff >= 5:
         step_ups = int(diff / 5)
-        new_effect = min(counter.choice.effect + step_ups * 2, 12)
+        new_effect = min(effect + step_ups * 2, 12)
         message += f"This is a **heroic success** for **{for_name}**. The effect die is stepped up to :d{new_effect}:."
     elif diff > 0 or (wins_ties and diff == 0):
-        message += f"This is a **success** for **{for_name}** with effect :d{counter.choice.effect}:."
+        message += f"This is a **success** for **{for_name}** with effect :d{effect}:."
     else:
         message += f"This is a **failure** for **{for_name}**."
     await send_message(channel, message)
