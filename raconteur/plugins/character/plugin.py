@@ -623,9 +623,12 @@ class CharacterPlugin(Plugin):
             roll_message = f"rolled **{total}** = {roll_results}"
         with get_session() as session:
             if self.use_channel_navigation(session, ctx.guild):
-                if character := get_channel_character(ctx, session):
+                try:
+                    character = get_channel_character(ctx, session)
                     await send_broadcast(ctx.guild, character.location, f"**{character.name}** " + roll_message)
                     return None
+                except CommandException:
+                    pass
             else:
                 if location := Location.get_for_channel(session, ctx.guild.id, ctx.channel.id):
                     await send_broadcast(ctx.guild, location, f"**The GM** " + roll_message)
